@@ -55,7 +55,7 @@ void platform_normalize_separators(char *path) {
     (void)path;
 }
 
-int platform_drive_separator(const char *path, const char *separator) {
+int platform_root_separator(const char *path, const char *separator) {
     (void)path;
     (void)separator;
     return 0;

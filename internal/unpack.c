@@ -167,7 +167,7 @@ static ArcResult safe_root(const char *path) {
     for (char *p = copy; *p; ++p) {
         if (*p != '/' || p == copy)
             continue;
-        if (platform_drive_separator(copy, p))
+        if (platform_root_separator(copy, p))
             continue;
         char saved = *p;
         *p = 0;

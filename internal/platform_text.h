@@ -32,7 +32,8 @@ ArcResult platform_order_names(const char *a, const char *b, int *order);
 ArcResult platform_compare_names(const char *a, const char *b, int prefix, int *equal);
 int platform_valid_component(const char *s, size_t length);
 void platform_normalize_separators(char *path);
-int platform_drive_separator(const char *path, const char *separator);
+/* Normalized separators within a native root cannot be inspected as parents. */
+int platform_root_separator(const char *path, const char *separator);
 int platform_link_target_compatible(const char *target);
 
 #endif

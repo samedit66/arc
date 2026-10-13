@@ -181,7 +181,8 @@ def test_hardlink_to_directory_is_rejected(arc, make_tar):
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows extended path support")
-def test_windows_long_unicode_paths(arc, tmp_path):
+@pytest.mark.parametrize("extended_prefix", [False, True])
+def test_windows_long_unicode_paths(arc, tmp_path, extended_prefix):
     parent = tmp_path / ("ю" * 30)
     for index in range(6):
         parent = parent / (f"nested-{index}" + "x" * 40)
@@ -194,5 +195,8 @@ def test_windows_long_unicode_paths(arc, tmp_path):
     archive = parent / "тест.tar"
     arc("pack", archive, source)
     arc("verify", archive)
-    arc("unpack", archive, parent / "output")
+    destination = parent / "output"
+    if not extended_prefix:
+        destination = Path(str(destination).removeprefix("\\\\?\\"))
+    arc("unpack", archive, destination)
     assert (parent / "output/текст").read_bytes() == b"long path"

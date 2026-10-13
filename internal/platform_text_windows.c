@@ -98,8 +98,21 @@ void platform_normalize_separators(char *path) {
             *p = '/';
 }
 
-int platform_drive_separator(const char *path, const char *separator) {
-    return separator == path + 2 && path[1] == ':';
+int platform_root_separator(const char *path, const char *separator) {
+    if (path[0] && path[1] == ':')
+        return separator == path + 2;
+    const char *server = NULL;
+    if (!strncmp(path, "//?/UNC/", 8))
+        server = path + 8;
+    else if (!strncmp(path, "//?/", 4))
+        return separator <= path + 3 || (path[4] && path[5] == ':' && separator == path + 6);
+    else if (!strncmp(path, "//", 2))
+        server = path + 2;
+    if (server) {
+        const char *end = strchr(server, '/');
+        return separator < server || (end && separator == end);
+    }
+    return 0;
 }
 
 int platform_link_target_compatible(const char *target) {

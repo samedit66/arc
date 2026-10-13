@@ -402,7 +402,7 @@ static ArcResult add_source(Arc *w, const char *source, const char *stored, int 
     platform_normalize_separators(prefix);
     size_t plen = strlen(prefix);
     while (plen > 1 && prefix[plen - 1] == '/') {
-        if (platform_drive_separator(prefix, prefix + plen - 1))
+        if (platform_root_separator(prefix, prefix + plen - 1))
             break;
         prefix[--plen] = 0;
     }
