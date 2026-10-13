@@ -24,7 +24,12 @@ existing binary after download, dependency, build, copy or publication failures.
 replacing the download with a local shell script. It checks path quoting,
 UCRT64 selection, failure propagation, environment restoration and cleanup.
 
-The suite treats arc as a black box: it invokes the executable and checks exit
+Before pytest, `scripts/check-api.sh` compiles and runs `tests/api.c` against
+the freshly built static library. It checks public writer/reader states, chunk
+sizes, EOF, skip, handle consumption and capability output contracts, including
+sanitizer instrumentation when enabled.
+
+The Python suite treats arc as a black box: it invokes the executable and checks exit
 status, output, archives and filesystem effects. The Python environment lives
 in `tests/.venv`; dependencies are declared in `pyproject.toml` and pinned in
 `uv.lock`. uv installs the locked dependencies on first use.

@@ -52,9 +52,9 @@ filekit -> C runtime + native platform APIs
 
 Only the writer, reader, unpack and libarchive adapter modules use libarchive. Archive modules call filekit directly using its own info, identity and link-kind types. Filekit never accepts backend entries or extraction records. The backend adapter exposes private `ArchiveMetadata` values; unpack owns permission/time restoration policy. `ar_from_filekit` in support translates errors without an operation wrapper layer. `struct ArcReader` and its current-entry text are owned exclusively by `reader.c`; listing delegates to this sequential reader. `struct ArcWriter` and the writer index are owned exclusively by `writer.c`; `unpack.c` owns a distinct extraction index, retained entry clones and deferred-link state. Name-conflict semantics are shared through a typed AVL path index containing copied names, entry types and stable owner record numbers. Writer and extraction records remain separately owned; no generic untyped collection is introduced.
 
-The build selects one filekit filesystem implementation and one arc platform-text implementation at compile time. Filekit builds to its own static library without libarchive or pkg-config; the CLI links that library. Its public errors are explicitly translated to the unchanged ArcResult contract. The build uses an explicit object list; unselected or stale objects are not linked. There is no runtime platform dispatch. The private text header contains platform-specific locale representation; native branches needed to call libarchive's wide APIs remain in its adapter.
+The build selects one filekit filesystem implementation and one arc platform-text implementation at compile time. Filekit builds to its own static library without libarchive or pkg-config; arc embeds its platform objects in libarc.a, which the CLI links. Its public errors are explicitly translated to the unchanged ArcResult contract. The build uses an explicit object list; unselected or stale objects are not linked. There is no runtime platform dispatch. The private text header contains platform-specific locale representation; native branches needed to call libarchive's wide APIs remain in its adapter.
 
-The mise tasks own build, formatting and black-box CLI checks; `.github/workflows/ci.yml` invokes them on macOS, Linux and Windows. Generated test fixtures and binaries remain outside the source tree. Pytest tests use an isolated uv project in `tests/`. The filekit sublibrary retains independent API checks and its own mise tasks; arc tests do not compile API or implementation harnesses. No third-party production dependency, formatter configuration, dynamic loader or runtime dispatch is introduced.
+The mise tasks own build, formatting and black-box CLI checks; `.github/workflows/ci.yml` invokes them on macOS, Linux and Windows. Generated test fixtures and binaries remain outside the source tree. Pytest tests use an isolated uv project in `tests/`. The filekit sublibrary retains independent API checks and its own mise tasks; arc tests also compile a focused public C API harness against the built library. No third-party production dependency, formatter configuration, dynamic loader or runtime dispatch is introduced.
 
 ## 3. Human-oriented interface principles
 
@@ -249,7 +249,7 @@ Statistics count archive records rather than unique filesystem objects. `content
 - Input strings and option structures are borrowed for the call. The implementation copies information needed after return.
 - Writers are exclusively owned. The same writer must not be accessed concurrently or copied as an independently owned resource.
 - There is no process-global mutable error buffer or library working-directory change. A writer output is bound to an owned absolute UTF-8 path at create time. Sequential caller working-directory changes between writer calls are supported; relative source operands refer to the directory at their own call. Concurrent process working-directory changes during any operation are unsupported.
-- Output values are modified only on success, except `arc_create`, `arc_close` and `arc_discard`, whose pointer behavior is explicitly defined.
+- Output values are modified only on success, except writer/reader creation and close/discard operations, whose pointer behavior is explicitly defined.
 - Reading requires the source archive to remain unchanged for the duration of the operation.
 - Filesystem parents must exist and be trusted. The API is not a sandbox against another process concurrently replacing path components.
 - Size conversions and sums are checked. Silent truncation, integer wraparound and automatic zero padding are prohibited.
@@ -796,7 +796,8 @@ has a separate API suite. See the [test guide](../tests/README.md).
 
 The mise build emits `libarc.a` containing arc and private filekit objects.
 Libarchive remains external. CMake 3.21+ provides `arc::arc` for source-tree
-embedding and installed packages, plus relocatable pkg-config metadata.
+embedding and installed packages, plus relocatable pkg-config metadata. The root `VERSION` supplies the release
+version for both build paths and installed package metadata.
 Only `arc.h` is installed as arc's public header. C++ consumers use C linkage;
 the implementation is compiled as C11. MSYS2 UCRT64 is the supported Windows
 toolchain; MSVC is not verified.

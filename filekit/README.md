@@ -121,6 +121,6 @@ filekit never changes locale. Arc's private text/support modules reuse
 filekit's private Unicode and UTF-8 hooks within this repository; those hooks are
 not a compatibility promise for external filekit consumers.
 
-The root build links the CLI to the standalone static library. Regression fault
-injection substitutes filekit functions in test-only objects, while independent
-filekit checks exercise real filesystem effects without linking libarchive.
+The root build embeds filekit objects in libarc.a. Independent filekit checks
+exercise real filesystem effects without linking libarchive; arc regression
+checks exercise the CLI and public C API.
