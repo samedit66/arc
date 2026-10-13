@@ -380,10 +380,13 @@ static int valid_destination_name(const char *name) {
     char *dot = strchr(stem, '.');
     if (dot)
         *dot = 0;
+    /* Windows reserves device names regardless of case or extension. */
     int reserved = !_stricmp(stem, "con") || !_stricmp(stem, "prn") || !_stricmp(stem, "aux") ||
                    !_stricmp(stem, "nul");
     if (strlen(stem) >= 4 && (!_strnicmp(stem, "com", 3) || !_strnicmp(stem, "lpt", 3))) {
         const unsigned char *p = (const unsigned char *)stem + 3;
+        /* Windows also reserves COM/LPT followed by superscript ¹, ² or ³.
+         * Their UTF-8 encodings are C2 B9, C2 B2 and C2 B3. */
         reserved |= (p[0] >= '1' && p[0] <= '9' && !p[1]) ||
                     (p[0] == 0xc2 && (p[1] == 0xb9 || p[1] == 0xb2 || p[1] == 0xb3) && !p[2]);
     }

@@ -57,6 +57,8 @@ int main(void) {
     CHECK(!filekit_compare_identity(info.identity, anchored.identity));
 #ifdef _WIN32
     CHECK(absolute[0] == '\\');
+    /* Match Arc's normalized spelling of extended paths; it must still
+     * identify the same file as the native backslash spelling. */
     char *normalized = malloc(strlen(absolute) + 1);
     CHECK(normalized);
     strcpy(normalized, absolute);

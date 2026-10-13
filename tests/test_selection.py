@@ -90,6 +90,8 @@ def test_selected_hardlink_cycle_is_rejected(arc, make_tar):
 
 def test_selected_symbolic_link_can_be_dangling(arc, make_tar, tmp_path, symlinks_available):
     archive = make_tar([link_entry("alias", "target"), file_entry("target", b"not-selected")])
+    # Windows creation needs a file/directory target kind. Arc rejects
+    # unresolved targets instead of guessing; POSIX allows dangling links.
     result = arc("unpack", "--entry", "alias", archive, "output", success=os.name != "nt")
     if os.name == "nt":
         assert "Unknown Windows link target type" in result.stderr

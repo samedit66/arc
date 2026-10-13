@@ -99,6 +99,10 @@ void platform_normalize_separators(char *path) {
 }
 
 int platform_root_separator(const char *path, const char *separator) {
+    /* Paths already use '/'. Skip separators in native root prefixes:
+     * C:/, //?/C:/, //server/share and //?/UNC/server/share.
+     * Prefix fragments such as "//?" or "//server" are not directories;
+     * the remaining ancestors must still be checked for redirection. */
     if (path[0] && path[1] == ':')
         return separator == path + 2;
     const char *server = NULL;

@@ -30,6 +30,9 @@ int fk_reserved_component(const char *s, size_t n) {
 
 static FilekitResult validate_windows_path(const char *s) {
     const char *p = s;
+    /* Arc normalizes filesystem separators before traversal. Accept both
+     * spellings of extended-path prefixes so '?' is treated as part of
+     * the prefix, rather than as an invalid filename character. */
     if (!strncmp(p, "\\\\?\\UNC\\", 8) || !strncmp(p, "//?/UNC/", 8))
         p += 8;
     else if (!strncmp(p, "\\\\?\\", 4) || !strncmp(p, "//?/", 4))

@@ -317,6 +317,8 @@ ArcResult backend_configure_writer(struct archive *backend, const ArcOptions *op
     const Format *c = lookup(filters, ARRAY_COUNT(filters), options->compression);
     if (f->write(backend) != ARCHIVE_OK || c->write(backend) != ARCHIVE_OK)
         return backend_error(backend, ARC_IO_ERROR);
+    /* Explicit UTF-8 keeps ZIP names portable: the Windows backend may
+     * otherwise choose CP437, which cannot represent names such as Cyrillic. */
     if (!strcmp(f->name, "zip") &&
         archive_write_set_format_option(backend, "zip", "hdrcharset", "UTF-8") != ARCHIVE_OK)
         return backend_error(backend, ARC_IO_ERROR);

@@ -159,6 +159,8 @@ def test_existing_symlink_parent_is_rejected(arc, make_tar, tmp_path, symlinks_a
 
 def test_dangling_symlink(arc, make_tar, tmp_path, symlinks_available):
     archive = make_tar([link_entry("dangling", "missing")])
+    # Windows creation needs a file/directory target kind. Arc rejects
+    # unresolved targets instead of guessing; POSIX allows dangling links.
     result = arc("unpack", archive, "output", success=os.name != "nt")
     if os.name == "nt":
         assert "Unknown Windows link target type" in result.stderr
@@ -195,6 +197,8 @@ def test_windows_long_unicode_paths(arc, tmp_path, extended_prefix):
     archive = parent / "тест.tar"
     arc("pack", archive, source)
     arc("verify", archive)
+    # Create the fixture with an extended path, then exercise both CLI
+    # destination spellings. Arc must handle long paths in either form.
     destination = parent / "output"
     if not extended_prefix:
         destination = Path(str(destination).removeprefix("\\\\?\\"))
