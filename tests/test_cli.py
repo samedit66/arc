@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import zipfile
 
 import pytest
@@ -6,7 +7,7 @@ import pytest
 
 def test_version(arc):
     result = arc("--version")
-    assert result.stdout == f"arc {os.environ.get('ARC_VERSION') or 'dev'}\n"
+    assert result.stdout == f"arc {os.environ.get('ARC_VERSION') or (Path(__file__).parents[1] / 'VERSION').read_text().strip()}\n"
     assert not result.stderr
 
 

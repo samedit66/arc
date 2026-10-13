@@ -16,7 +16,12 @@ read -r -a sanitizer_flags <<< "$ARC_SANITIZER_FLAGS"
 read -r -a link_flags <<< "$ARC_LDFLAGS"
 # Bash 3.2 treats empty arrays as unset under nounset.
 flags+=(${sanitizer_flags[@]+"${sanitizer_flags[@]}"})
-version="${ARC_VERSION:-dev}"
+release_version=$(cat VERSION)
+if [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    printf 'VERSION must contain one MAJOR.MINOR.PATCH version\n' >&2
+    exit 1
+fi
+version="${ARC_VERSION:-$release_version}"
 if [[ ! "$version" =~ ^[A-Za-z0-9][A-Za-z0-9.+_-]*$ ]]; then
     printf 'Invalid ARC_VERSION: use letters, digits, dots, plus, underscores or hyphens\n' >&2
     exit 1

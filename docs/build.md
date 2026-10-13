@@ -22,13 +22,15 @@ mise run run -- --help
 Build output stays outside the source tree, in the temporary directory by
 default. Set `ARC_BUILD_DIR` to choose another location and `CC` to choose the
 compiler; `AR` selects the static-library archiver. `ARC_VERSION` sets the
-version (default `dev`), and `ARC_SANITIZE=1` enables ASan/UBSan on macOS or
+CLI version override (default: the root `VERSION` file), and `ARC_SANITIZE=1` enables ASan/UBSan on macOS or
 Linux. Direct calls to `scripts/build.sh`, `scripts/run.sh` and
 `scripts/test.sh` load the configuration through `mise exec` when necessary.
 Standalone `filekit/build.sh` retains its own defaults and does not require mise.
 `mise run run` builds the application and forwards its arguments.
 
-Local builds report `arc dev`. To embed a version:
+The root `VERSION` file is the release version source for shell builds, CMake
+and package metadata. Local builds report that version. To override CLI build
+identification without changing the package version:
 
 ```sh
 ARC_VERSION=0.1.0 mise run build
@@ -90,7 +92,10 @@ target_link_libraries(my_app PRIVATE arc::arc)
 Installation supplies `arc.h`, one static library containing the private
 filekit implementation, and CMake/pkg-config metadata. Libarchive remains an
 external dependency; the CMake package resolves it in the consuming build.
-There is no stable release version yet (`arc.pc` uses `0.0.0` as a placeholder).
+CMake and pkg-config report the version from `VERSION`. Installed CMake packages
+support version requests with exact compatibility during the 0.x series:
+`find_package(arc 0.1.0 EXACT CONFIG REQUIRED)`. LICENSE is installed alongside
+the package under `share/licenses/arc` (or the configured datadir).
 
 ### Make or direct compiler invocation
 

@@ -1,10 +1,10 @@
-prefix=${pcfiledir}/@ARC_PC_PREFIX@
-libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
-includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
+prefix=@ARC_PC_PREFIX_VALUE@
+libdir=@ARC_PC_LIBDIR@
+includedir=@ARC_PC_INCLUDEDIR@
 
 Name: arc
 Description: C11 archive library
-Version: 0.0.0
+Version: @PROJECT_VERSION@
 Requires: libarchive
 Libs: -L${libdir} -larc
 Cflags: -I${includedir}

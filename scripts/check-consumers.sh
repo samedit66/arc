@@ -13,12 +13,19 @@ ctest --test-dir "$work/source" --output-on-failure
 cmake -S . -B "$work/library" -DARC_BUILD_CLI=ON -DARC_DEVELOPER_WARNINGS=ON -DCMAKE_INSTALL_PREFIX="$work/prefix" -DCMAKE_INSTALL_LIBDIR=lib
 cmake --build "$work/library"
 "$work/library/arc" --help
+[[ "$("$work/library/arc" --version)" == "arc $(cat VERSION)" ]]
 cmake --install "$work/library"
+[[ -f "$work/prefix/share/licenses/arc/LICENSE" ]]
 mv "$work/prefix" "$work/relocated"
-cmake -S tests/consumer -B "$work/installed" -DCMAKE_PREFIX_PATH="$work/relocated"
+cmake -S tests/consumer -B "$work/installed" -DCMAKE_PREFIX_PATH="$work/relocated" -DARC_EXPECT_VERSION="$(cat VERSION)"
 cmake --build "$work/installed"
 ctest --test-dir "$work/installed" --output-on-failure
+if cmake -S tests/consumer -B "$work/incompatible" -DCMAKE_PREFIX_PATH="$work/relocated" -DARC_EXPECT_VERSION=999.0.0 > "$work/incompatible.log" 2>&1; then
+    printf 'Installed package accepted an incompatible version\n' >&2
+    exit 1
+fi
 export PKG_CONFIG_PATH="$work/relocated/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+[[ "$(pkg-config --modversion arc)" == "$(cat VERSION)" ]]
 read -r -a compile_flags <<< "$(pkg-config --cflags arc)"
 read -r -a libraries <<< "$(pkg-config --libs arc)"
 read -r -a static_libraries <<< "$(pkg-config --static --libs arc)"
