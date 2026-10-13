@@ -117,6 +117,14 @@ Libarchive provides read/write support for TAR/PAX, ZIP, 7z, CPIO, AR, ISO9660, 
 
 Reading uses content detection and enables available archive readers rather than applying a filename-extension whitelist. Additional detected formats can be readable without becoming named creation options. `raw`, `mtree` and `shar` are not promised as ordinary multi-file extraction formats: their semantics differ from the primary abstraction.
 
+7z requires outer compression `none`: its reader needs seekable archive data.
+Configuration queries and creation reject compressed 7z combinations with
+`UNSUPPORTED`; content-detected reads reject those wrappers too. ZIP with outer
+compression uses a streaming reader: list, verify and unpack remain available,
+but capabilities omit `CAN_INSPECT` because declared sizes may be unavailable.
+AR creation accepts only flat entry names and rejects directory components
+rather than silently replacing paths with basenames.
+
 Not every format/compression combination is usable. Capability queries and attempted operations decide support. TAR uses a PAX-compatible representation in the initial backend; selecting historical TAR or CPIO variants is outside the initial interface.
 
 ## 6. Result values and public types
@@ -734,7 +742,10 @@ Paths containing spaces are shell-quoted. After the subcommand, parse supported 
 
 No interactive overwrite prompt, --overwrite, automatic skipping or silent substitution is included. Successful modifying commands print a brief completion message only after successful finalization/extraction. Operation failures identify the operation and path when available. Link and extraction failures can leave partial extracted output, which the diagnostic must identify. Output paths are never opened with truncation to resolve a conflict.
 
-Exit codes: 0 for success, 1 for operational failure, 2 for command-line usage errors. Diagnostic output is English and written to stderr. Cleanup failures are reported separately from the original failure. `main.c` uses `wmain` on Windows and `main` on other targets.
+Exit codes: 0 for success, 1 for operational failure, 2 for command-line usage errors. Diagnostic output is English and written to stderr. CLI status and diagnostic text
+escapes control characters from paths and backend messages; presentation color
+sequences are generated separately. A stdout flush failure produces a nonzero
+exit status, including failures discovered after buffered list/info output. Cleanup failures are reported separately from the original failure. `main.c` uses `wmain` on Windows and `main` on other targets.
 
 ## 15. API sequence examples
 

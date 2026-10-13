@@ -97,16 +97,29 @@ FilekitResult filekit_create_file_exclusive(const char *path, unsigned mode, int
         return r;
     HANDLE h = CreateFileW(w, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_NEW,
                            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
-    DWORD native_error = GetLastError();
-    free(w);
-    SetLastError(native_error);
-    if (h == INVALID_HANDLE_VALUE)
+    if (h == INVALID_HANDLE_VALUE) {
+        DWORD native_error = GetLastError();
+        free(w);
+        SetLastError(native_error);
         return fk_windows_error("Open", path);
+    }
     fd = _open_osfhandle((intptr_t)h, _O_WRONLY | _O_BINARY);
     if (fd < 0) {
-        CloseHandle(h);
-        return fk_system_error("Open", path);
+        FilekitResult failure = fk_system_error("Open", path);
+        int closed = CloseHandle(h);
+        DWORD close_error = closed ? 0 : GetLastError();
+        if (!DeleteFileW(w)) {
+            DWORD delete_error = GetLastError();
+            failure = fk_result(failure.code,
+                                "%.120s; Incomplete output remains: '%.70s' (Windows error %lu).",
+                                failure.message, path, (unsigned long)delete_error);
+        } else if (!closed)
+            failure = fk_result(failure.code, "%.170s; handle cleanup failed (Windows error %lu).",
+                                failure.message, (unsigned long)close_error);
+        free(w);
+        return failure;
     }
+    free(w);
     (void)mode;
     *out = fd;
     return fk_okay();

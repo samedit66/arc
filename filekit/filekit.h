@@ -118,7 +118,9 @@ FilekitResult filekit_absolute_path(const char *path, char **out);
  * - `mode`: Requested POSIX permission bits; Windows uses inherited ACLs.
  * - `out`: Non-NULL output for an owned descriptor; close after success.
  *
- * Caller owns the writable CRT/POSIX fd.
+ * Caller owns the writable CRT/POSIX fd. A failure after native creation rolls
+ * back the new file; if removal fails, the diagnostic identifies the leftover.
+ * Existing objects are never removed during rollback.
  * POSIX applies mode & 0777 through umask; Windows uses inherited ACLs.
  *
  * Example:

@@ -128,6 +128,8 @@ ArcResult arc_get_capabilities_impl(const ArcOptions *options, unsigned *out) {
     const Format *c = lookup(filters, ARRAY_COUNT(filters), options->compression);
     if (!f || !c)
         return ar_result(ARC_UNSUPPORTED, "Unknown archive configuration.");
+    if (!strcmp(f->name, "7z") && strcmp(c->name, "none"))
+        return ar_result(ARC_UNSUPPORTED, "7z requires seekable input without outer compression.");
     struct archive *read = archive_read_new(), *write = archive_write_new();
     if (!read || !write) {
         ArcResult r = ar_result(ARC_OUT_OF_MEMORY, "Cannot allocate archive backend.");
@@ -159,6 +161,10 @@ ArcResult arc_get_capabilities_impl(const ArcOptions *options, unsigned *out) {
         flags |= ARC_CAN_CREATE |
                  (f->features & (ARC_CAN_WRITE_DIRECTORIES | ARC_CAN_WRITE_SYMBOLIC_LINKS |
                                  ARC_CAN_WRITE_HARD_LINKS));
+    /* Outer filters force ZIP's streaming reader, which cannot expose all
+     * declared sizes without reading bodies. Inspect only promises metadata. */
+    if (!strcmp(f->name, "zip") && strcmp(c->name, "none"))
+        flags &= ~ARC_CAN_INSPECT;
     r = ar_cleanup(r, probe_free(read, 0));
     r = ar_cleanup(r, probe_free(write, 1));
     if (ar_failed(r))
@@ -285,6 +291,9 @@ ArcEntryType entry_type(struct archive_entry *e) {
 
 ArcResult read_header(struct archive *a, struct archive_entry **e, int *end) {
     int status = archive_read_next_header(a, e);
+    if ((archive_format(a) & ARCHIVE_FORMAT_BASE_MASK) == ARCHIVE_FORMAT_7ZIP &&
+        archive_filter_code(a, 0) != ARCHIVE_FILTER_NONE)
+        return ar_result(ARC_UNSUPPORTED, "7z requires seekable input without outer compression.");
     *end = status == ARCHIVE_EOF;
     if (*end)
         return ar_okay();

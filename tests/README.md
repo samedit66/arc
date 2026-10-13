@@ -27,7 +27,13 @@ UCRT64 selection, failure propagation, environment restoration and cleanup.
 Before pytest, `scripts/check-api.sh` compiles and runs `tests/api.c` against
 the freshly built static library. It checks public writer/reader states, chunk
 sizes, EOF, skip, handle consumption and capability output contracts, including
-sanitizer instrumentation when enabled.
+sanitizer instrumentation when enabled. `api_formats.c` checks the named writer
+formats against every named outer filter: unavailable configurations create no
+output, and advertised list/inspect/verify/unpack operations preserve file data.
+On Windows, `api_windows_cleanup.c` substitutes descriptor allocation and
+rollback deletion at native boundaries while using the production filekit code
+and real file creation/handle closing. It checks rollback, cleanup diagnostics
+and preservation of existing files.
 
 The Python suite treats arc as a black box: it invokes the executable and checks exit
 status, output, archives and filesystem effects. The Python environment lives

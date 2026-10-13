@@ -11,7 +11,8 @@
 extern "C" {
 #endif
 
-/** Output archive configuration. */
+/** Output archive configuration. AR accepts only flat entry names;
+ * 7z requires outer compression "none". */
 typedef struct {
     /** Non-NULL, case-sensitive Arc format identifier. */
     const char *format;
@@ -169,6 +170,8 @@ typedef ArcResult (*ArcVisitor)(const ArcEntry *entry, void *context);
  * not every encryption method, entry type or format-specific feature.
  * With a password, CREATE requires available ZIP AES-256 encryption.
  * Read bits do not guarantee support for encrypted variants.
+ * 7z requires outer compression "none". ZIP with outer compression does not
+ * advertise INSPECT because its streaming reader may expose unknown sizes.
  * Entry-feature bits describe read/write representation, not filesystem
  * permissions or guaranteed extraction on the current host.
  *
@@ -295,6 +298,7 @@ ArcResult arc_add_text(ArcWriter *writer, const char *entry_path, const char *te
  * - `entry_path`: Non-NULL safe relative UTF-8 archive path.
  * - `size`: Exact content size; must be representable by the backend.
  *
+ * AR requires flat entry names; directory components return UNSUPPORTED.
  * Uses permissions 0644 and the current modification time where supported.
  * Success requires a later end_file, including for zero-byte entries.
  * Duplicate entry names are rejected.

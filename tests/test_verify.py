@@ -151,3 +151,21 @@ def test_large_entry_and_empty_file(arc, make_tar, tmp_path):
     arc("unpack", archive, "output")
     assert (tmp_path / "output/big").read_bytes() == data
     assert (tmp_path / "output/empty").read_bytes() == b""
+
+
+@pytest.mark.parametrize("compression", ["gzip", "bzip2", "xz"])
+@pytest.mark.parametrize("command", ["list", "info", "verify", "unpack"])
+def test_outer_compressed_7z_is_unsupported(arc, tmp_path, compression, command):
+    import bz2
+    import gzip
+    import lzma
+
+    source = tmp_path / "value"
+    source.write_bytes(b"payload")
+    arc("pack", "plain.7z", source)
+    compressors = {"gzip": gzip.compress, "bzip2": bz2.compress, "xz": lzma.compress}
+    wrapped = tmp_path / "wrapped.bin"
+    wrapped.write_bytes(compressors[compression]((tmp_path / "plain.7z").read_bytes()))
+    result = arc(command, wrapped, success=False)
+    assert "7z requires seekable input without outer compression" in result.stderr
+    assert "Seek error" not in result.stderr

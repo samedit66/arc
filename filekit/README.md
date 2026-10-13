@@ -124,3 +124,8 @@ not a compatibility promise for external filekit consumers.
 The root build embeds filekit objects in libarc.a. Independent filekit checks
 exercise real filesystem effects without linking libarchive; arc regression
 checks exercise the CLI and public C API.
+
+On Windows, failure to allocate a CRT descriptor after native file creation
+closes the native handle and removes the newly created file. A removal failure
+preserves the primary error and reports the incomplete output. Arc's
+Windows API regression harness exercises these failure boundaries.

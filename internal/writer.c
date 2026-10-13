@@ -226,6 +226,10 @@ static ArcResult start_entry(ArcWriter *w, struct archive_entry *entry, ArcEntry
     if (!name)
         return writer_failure(w,
                               ar_result(ARC_INVALID_PATH, "Backend cannot represent entry name."));
+    if ((archive_format(w->backend) & ARCHIVE_FORMAT_BASE_MASK) == ARCHIVE_FORMAT_AR &&
+        strchr(name, '/'))
+        return writer_failure(
+            w, ar_result(ARC_UNSUPPORTED, "AR cannot preserve entry path '%s'.", name));
     WriterItem *p = NULL;
     ArcResult r = append_item(&w->index, name, type, &p);
     if (ar_failed(r))
