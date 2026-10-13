@@ -28,6 +28,19 @@
 /* Presentation belongs to the CLI; NO_COLOR disables ANSI color, not emoji. */
 typedef enum { MESSAGE_SUCCESS, MESSAGE_ERROR, MESSAGE_WARNING } MessageKind;
 
+static void display_text(FILE *out, const char *text, int escape_backslash) {
+    for (const unsigned char *p = (const unsigned char *)text; *p; ++p) {
+        if (*p < 32 || *p == 127)
+            fprintf(out, "\\x%02x", *p);
+        else if (*p == 0xc2 && p[1] >= 0x80 && p[1] <= 0x9f)
+            fprintf(out, "\\u00%02x", *++p);
+        else if (escape_backslash && *p == '\\')
+            fputs("\\\\", out);
+        else
+            fputc(*p, out);
+    }
+}
+
 static void message(MessageKind kind, const char *label, const char *format, ...) {
     FILE *out = kind == MESSAGE_SUCCESS ? stdout : stderr;
     const char *term = getenv("TERM");
@@ -68,7 +81,17 @@ static void message(MessageKind kind, const char *label, const char *format, ...
         fputs("\033[0m", out);
     va_list arguments;
     va_start(arguments, format);
-    vfprintf(out, format, arguments);
+    va_list copy;
+    va_copy(copy, arguments);
+    int length = vsnprintf(NULL, 0, format, copy);
+    va_end(copy);
+    char *text = length >= 0 ? malloc((size_t)length + 1) : NULL;
+    if (text) {
+        vsnprintf(text, (size_t)length + 1, format, arguments);
+        display_text(out, text, 0);
+        free(text);
+    } else
+        fputs(" [message unavailable]", out);
     va_end(arguments);
     fputc('\n', out);
 #ifdef _WIN32
@@ -394,16 +417,7 @@ static int pack(int count, char **args) {
 }
 
 static void escaped(const char *s) {
-    for (const unsigned char *p = (const unsigned char *)s; *p; ++p) {
-        if (*p < 32 || *p == 127)
-            printf("\\x%02x", *p);
-        else if (*p == 0xc2 && p[1] >= 0x80 && p[1] <= 0x9f)
-            printf("\\u00%02x", *++p);
-        else if (*p == '\\')
-            printf("\\\\");
-        else
-            putchar(*p);
-    }
+    display_text(stdout, s, 1);
 }
 
 static ArcResult print_entry(const ArcEntry *e, void *context) {
@@ -594,6 +608,16 @@ static int application(int argc, char **argv) {
         message(MESSAGE_SUCCESS, "Content readable", "; available integrity checks passed.");
     return r.code == ARC_OK ? 0 : 1;
 }
+
+static int finish(int status) {
+    if (fflush(stdout) == EOF || ferror(stdout)) {
+        fprintf(stderr, "Error: cannot write standard output.\n");
+        if (!status)
+            status = 1;
+    }
+    return status;
+}
+
 #ifdef _WIN32
 int wmain(int argc, wchar_t **argv) {
     char **args = calloc((size_t)argc + 1, sizeof *args);
@@ -616,10 +640,10 @@ int wmain(int argc, wchar_t **argv) {
     for (int i = 0; i < argc; ++i)
         free(args[i]);
     free(args);
-    return status;
+    return finish(status);
 }
 #else
 int main(int argc, char **argv) {
-    return application(argc, argv);
+    return finish(application(argc, argv));
 }
 #endif

@@ -124,3 +124,36 @@ def test_terminal_usage_error_keeps_help_plain(arc_binary, tmp_path):
     assert result.stdout == b""
     assert output.startswith("❌ \x1b[31mError:\x1b[0m invalid arguments for pack.\nUsage:")
     assert output.count("\x1b") == 2
+
+
+def test_archive_diagnostic_escapes_controls(arc, make_tar):
+    from support import file_entry
+
+    archive = make_tar([file_entry("bad\x1b[2J\x1b[H/../x")])
+    result = arc("unpack", archive, "output", success=False, env={"NO_COLOR": "1"})
+    assert "\x1b" not in result.stderr
+    assert "bad\\x1b[2J\\x1b[H/../x" in result.stderr
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX filename control characters")
+def test_status_path_escapes_controls(arc, simple_tar):
+    result = arc("pack", "copy\x1b[2J\n.tar", simple_tar)
+    assert result.stdout == "Created copy\\x1b[2J\\x0a.tar\n"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file-size limit")
+@pytest.mark.parametrize("command", ["list", "info", "verify", "--help", "--version"])
+def test_stdout_flush_failure_is_reported(arc_binary, simple_tar, tmp_path, command):
+    import resource
+    import signal
+
+    def limit_output():
+        signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+        resource.setrlimit(resource.RLIMIT_FSIZE, (0, 0))
+
+    arguments = [command, str(simple_tar)] if command in ("list", "info", "verify") else [command]
+    with (tmp_path / "stdout").open("wb") as output:
+        result = subprocess.run([str(arc_binary), *arguments], cwd=tmp_path, stdout=output,
+                                stderr=subprocess.PIPE, preexec_fn=limit_output, timeout=30)
+    assert result.returncode == 1, result.stderr
+    assert b"cannot write standard output" in result.stderr

@@ -6,5 +6,5 @@ Name: arc
 Description: C11 archive library
 Version: @PROJECT_VERSION@
 Requires: libarchive
-Libs: -L${libdir} -larc
-Cflags: -I${includedir}
+Libs: -L"${libdir}" -larc
+Cflags: -I"${includedir}"

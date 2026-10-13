@@ -107,6 +107,20 @@ cc $(pkg-config --cflags arc) -c app.c -o app.o
 cc app.o $(pkg-config --libs arc) -o app
 ```
 
+The shell examples above assume paths without spaces. For paths containing
+spaces, use CMake or parse pkg-config output as shell words rather than using
+shell word splitting. For example, with Python available:
+
+```python
+import shlex
+import subprocess
+
+def flags(*args):
+    return shlex.split(subprocess.check_output(["pkg-config", *args, "arc"], text=True))
+
+subprocess.run(["cc", *flags("--cflags"), "app.c", *flags("--libs"), "-o", "app"], check=True)
+```
+
 Use the C++ compiler for a C++ consumer and final C++ link. If linking
 libarchive statically, use `pkg-config --static --libs arc` to request its
 private dependency metadata and select static dependency artifacts separately.
@@ -124,11 +138,13 @@ filekit headers or a separate filekit library.
 ### Consumer verification
 
 ```sh
-bash scripts/check-consumers.sh
+mise exec -- bash scripts/check-consumers.sh
 ```
 
-Requires CMake, C/C++ compilers, pkg-config and libarchive. Checks source-tree
-and relocated installed CMake consumers, plus pkg-config consumers. Windows
+Requires CMake, C/C++ compilers, pkg-config, libarchive and the mise-managed
+Python. Checks source-tree
+and relocated installed CMake consumers, plus pkg-config consumers with spaces
+in the installation path. Windows
 consumers exercise both header orders with GDI enabled.
 
 ## Development tools
