@@ -1,45 +1,24 @@
 # Using arc
 
 This guide covers everyday CLI tasks and getting started with the C library.
-For setup and linking instructions, see [Building arc](build.md).
+For CLI installation, see the [installation guide](install.md).
+For source builds and library integration, see [Building arc](build.md).
 
 ## Command line
 
-`arc` provides an alternative client for working with archives, like `tar`, but more human-oriented.
-
-For example, here's how to extract an archive with `tar`:
+Use the same command to unpack different archive formats:
 
 ```sh
-tar -xf ppa.tar
-```
-
-With `arc`:
-
-```sh
-arc unpack ppa.tar
-```
-
-Longer to type, but the intent is clearer.
-
-How about unpacking a zip?
-
-```sh
-# You might need to install it first
-unzip project.zip
-```
-
-With `arc`:
-
-```sh
+arc unpack project.tar.gz
 arc unpack project.zip
 ```
 
-That's it: thanks to `libarchive`, we don't need to specify the archive format. It figures it out on its own.
+The archive format is detected from its contents.
 
 By default, this creates a new directory named after the archive. You can also choose where to unpack it:
 
 ```sh
-arc unpack ppa.tar ./restored
+arc unpack project.tar.gz ./restored
 ```
 
 The destination you specify can be an existing directory. Existing files and links are never overwritten. Paths inside the archive stay as they are.
@@ -126,7 +105,7 @@ Here is how to create an archive with a text file inside:
 #include <stdio.h>
 
 int main(void) {
-    Arc *writer = NULL;
+    ArcWriter *writer = NULL;
     ArcResult result = arc_create("hello.tar.gz", &writer);
     if (result.code != ARC_OK) {
         fprintf(stderr, "%s\n", result.message);

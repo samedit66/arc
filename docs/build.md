@@ -2,16 +2,15 @@
 
 Run the following commands from the repository root.
 
-The project targets macOS, Linux and Windows through MSYS2 UCRT64. Install
-mise, Bash, a C11 compiler, libarchive development files and pkg-config. On
-macOS the build uses Homebrew's libarchive. Compiler defaults (Clang on macOS,
-GCC on Linux and MSYS2 Windows), C11 warning flags, platform selection,
-Windows compile/link flags and sanitizer flags are declared in the root
-`mise.toml`. The scripts compile and link using that environment; `pkg-config`
-provides libarchive's include and link arguments. Both arc and its embedded
-filekit build use the same compiler. Existing `PKG_CONFIG_PATH` entries are
-preserved after the Homebrew libarchive path on macOS. `mise.toml` pins Python and uv for
-the development tools; these are not runtime dependencies of arc.
+The project targets macOS, Linux and Windows through MSYS2 UCRT64.
+The mise build requires Git, mise, Bash, a C11 compiler, `ar`, pkg-config and
+libarchive development files. For platform setup, see the
+[installation prerequisites](install.md#prerequisites).
+
+For embedding with CMake, see [Embedding the library](#embedding-the-library);
+that build path does not require mise or its development tools.
+
+## Build with mise
 
 ```sh
 mise trust
@@ -29,22 +28,103 @@ Linux. Direct calls to `scripts/build.sh`, `scripts/run.sh` and
 Standalone `filekit/build.sh` retains its own defaults and does not require mise.
 `mise run run` builds the application and forwards its arguments.
 
-For library use, include `arc.h` and link against the arc objects built by
-`mise run build`, `filekit/libfilekit.a` from the build directory, and libarchive.
-The source and platform-specific object lists are in [scripts/build.sh](../scripts/build.sh).
+Local builds report `arc dev`. To embed a version:
 
-Filesystem operations live in [filekit](../filekit/README.md), a separate C11
-sublibrary with no libarchive dependency.
+```sh
+ARC_VERSION=0.1.0 mise run build
+ARC_VERSION=0.1.0 mise run run -- --version
+```
+
+The root `mise.toml` declares compiler defaults (Clang on macOS, GCC on Linux
+and MSYS2 Windows), C11 warnings, platform selection and sanitizer flags.
+Arc and its embedded filekit use the same compiler. `pkg-config` supplies
+libarchive's include and link arguments. On macOS, Homebrew's libarchive path
+is prepended to existing `PKG_CONFIG_PATH` entries.
+Python and uv are pinned for development tools; they are not runtime dependencies.
 
 ## Windows
 
-Run the commands inside MSYS2 UCRT64 with its compiler, pkg-config and libarchive
-on PATH. `MISE_BASH_PATH` can explicitly select the MSYS2 Bash.
+Use the [MSYS2 UCRT64 setup](install.md#windows-msys2-ucrt64), then run the mise
+build commands above from the repository root in the UCRT64 terminal.
+To launch from PowerShell, include MSYS2's `ucrt64\bin` in `PATH` for runtime DLLs.
+MSVC is not currently verified.
 
-The arc build defines `NOGDI` to exclude Windows GDI declarations: GDI's `Arc()`
-function conflicts with arc's public `Arc` type. Applications including both
-`arc.h` and Windows headers must also define `NOGDI` before the Windows headers
-are included, including indirect inclusion through libarchive headers.
+## Embedding the library
+
+The public writer type is `ArcWriter`. The header supports C and C++.
+Compile the implementation as C11, even when the application uses C++.
+Windows support remains MSYS2 UCRT64; MSVC is not currently verified.
+
+### CMake from source
+
+CMake 3.21 or newer and libarchive development files are required. No mise,
+Bash or Python is needed by this build path.
+
+```cmake
+add_subdirectory(third_party/arc)
+target_link_libraries(my_app PRIVATE arc::arc)
+```
+
+The CLI defaults to off when embedded. `ARC_BUILD_CLI` selects it explicitly.
+C11, large-file support, platform sources and PIC apply to the library;
+development warnings are opt-in with `ARC_DEVELOPER_WARNINGS`. The Windows
+`-municode` flag applies only to the CLI.
+On macOS select Homebrew libarchive with
+`-DCMAKE_PREFIX_PATH="$(brew --prefix libarchive)"` when configuring.
+
+### Installed CMake package
+
+```sh
+cmake -S . -B build -DARC_BUILD_CLI=OFF -DCMAKE_INSTALL_PREFIX=/your/prefix
+cmake --build build
+cmake --install build
+```
+
+Then configure the application with `-DCMAKE_PREFIX_PATH=/your/prefix`:
+
+```cmake
+find_package(arc CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE arc::arc)
+```
+
+Installation supplies `arc.h`, one static library containing the private
+filekit implementation, and CMake/pkg-config metadata. Libarchive remains an
+external dependency; the CMake package resolves it in the consuming build.
+There is no stable release version yet (`arc.pc` uses `0.0.0` as a placeholder).
+
+### Make or direct compiler invocation
+
+Add the installed `lib/pkgconfig` (or configured libdir) to `PKG_CONFIG_PATH`.
+The metadata includes the external libarchive dependency:
+
+```sh
+cc $(pkg-config --cflags arc) -c app.c -o app.o
+cc app.o $(pkg-config --libs arc) -o app
+```
+
+Use the C++ compiler for a C++ consumer and final C++ link. If linking
+libarchive statically, use `pkg-config --static --libs arc` to request its
+private dependency metadata and select static dependency artifacts separately.
+This flag alone does not force a fully static executable. Homebrew's
+libarchive metadata may need an additional `-L"$(brew --prefix)/lib"` for its
+private compression libraries.
+Compatible libarchive shared libraries/DLLs must be available at runtime when
+linked dynamically. Match target architecture and Windows CRT across builds.
+
+The mise build also produces `libarc.a` in its build directory. For manual
+linking, add the source root to the consumer's include path and link `libarc.a`
+followed by libarchive's pkg-config link arguments. Consumers do not need
+filekit headers or a separate filekit library.
+
+### Consumer verification
+
+```sh
+bash scripts/check-consumers.sh
+```
+
+Requires CMake, C/C++ compilers, pkg-config and libarchive. Checks source-tree
+and relocated installed CMake consumers, plus pkg-config consumers. Windows
+consumers exercise both header orders with GDI enabled.
 
 ## Development tools
 

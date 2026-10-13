@@ -62,26 +62,7 @@ malicious inputs are never extracted with Python. Path-escape tests use an
 `outside` directory and sentinel inside the test's temporary root. This
 contains the intended targets; the temporary directory is not an OS sandbox.
 
-## Coverage migration
-
-| Previous scenario | New location |
-| --- | --- |
-| Formats, round trips, source inference, root retention, invalid pack, locale, self-exclusion, hard/symbolic links | `test_pack.py` |
-| Python-created archives, destination inference, merge metadata, overwrite refusal, unsafe paths/links, Windows names | `test_unpack.py` |
-| Exact/subtree selection, missing matches, link-target selection, unselected metadata | `test_selection.py` |
-| Listing, counts, non-mutating inspection, local RAR fixture | `test_inspect.py` |
-| CRC, truncation, damaged headers, synthetic encrypted flag, sparse TAR, ODC CPIO, empty/large entries | `test_verify.py` |
-| AES creation and independent reading, AES/ZipCrypto inputs, password errors, selection and damaged ciphertext | `test_password.py` |
-| Help, invalid arguments, missing archives, dash-prefixed paths | `test_cli.py` |
-
-The previous count of 177 counted subprocess/API calls, not independent tests.
-The new count reports independently collected scenarios including parameterized
-cases. API-only streaming checks, state/ownership contracts, internal index
-complexity, allocation fault injection, symbol replacements and deliberately
-modified implementations were removed from arc's suite by design. Observable
-outcomes such as large-file extraction and invalid-header rejection are covered
-through the CLI. No performance improvement or internal API coverage is claimed.
-Filekit's independent API suite is outside this suite.
+## Format coverage
 
 Python reads TAR, gzip/bzip2/xz TAR and ZIP outputs independently.
 The development-only pyzipper dependency checks AES ZIP independently; a

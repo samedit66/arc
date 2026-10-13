@@ -1,16 +1,19 @@
 # Arc Library Design
 
-Date: 2026-10-13  
-Status: Accepted direction, implementation specification  
-Revision: 11 — direct filekit integration without a filesystem wrapper layer  
+Status: Current architecture and contracts  
 Language: C11  
 Targets: macOS, Linux, Windows (MSYS2 UCRT64)
+
+This document describes the current design. [arc.h](../arc.h) is authoritative
+for public declarations and individual operation contracts. For practical
+instructions, see [installation](install.md), [building and embedding](build.md)
+and the [tutorial](tutorial.md).
 
 ## 1. Purpose
 
 Arc is a small, human-oriented C API for creating, inspecting and extracting archives. Its vocabulary describes user actions: create an archive, add a file or text, write a chunk, close, inspect and unpack. Callers do not need to understand backend handles, entry objects, format codes or initialization sequences.
 
-The initial implementation uses [libarchive](https://github.com/libarchive/libarchive). The interface is defined by Arc's own semantics, not by a renamed copy of the libarchive API. Another backend may implement the same interface while advertising a different set of supported operations and formats.
+The implementation uses [libarchive](https://github.com/libarchive/libarchive). The interface is defined by Arc's own semantics, not by a renamed copy of the libarchive API. Another backend may implement the same interface while advertising a different set of supported operations and formats.
 
 All failures controlled by Arc are values. Its own code does not use exceptions, `longjmp`, process termination or assertions as an error-handling mechanism. Returned backend failures are converted to ArcResult. Fatal termination inside libarchive itself, including some out-of-memory paths, is not intercepted; this is an explicitly accepted backend limitation.
 
@@ -47,9 +50,9 @@ platform text/support -> private filekit text helpers (in-repository integration
 filekit -> C runtime + native platform APIs
 ```
 
-Only the writer, reader, unpack and libarchive adapter modules use libarchive. Archive modules call filekit directly using its own info, identity and link-kind types. Filekit never accepts backend entries or extraction records. The backend adapter exposes private `ArchiveMetadata` values; unpack owns permission/time restoration policy. `ar_from_filekit` in support translates errors without an operation wrapper layer. `struct ArcReader` and its current-entry text are owned exclusively by `reader.c`; listing delegates to this sequential reader. `struct Arc` and the writer index are owned exclusively by `writer.c`; `unpack.c` owns a distinct extraction index, retained entry clones and deferred-link state. Name-conflict semantics are shared through a typed AVL path index containing copied names, entry types and stable owner record numbers. Writer and extraction records remain separately owned; no generic untyped collection is introduced.
+Only the writer, reader, unpack and libarchive adapter modules use libarchive. Archive modules call filekit directly using its own info, identity and link-kind types. Filekit never accepts backend entries or extraction records. The backend adapter exposes private `ArchiveMetadata` values; unpack owns permission/time restoration policy. `ar_from_filekit` in support translates errors without an operation wrapper layer. `struct ArcReader` and its current-entry text are owned exclusively by `reader.c`; listing delegates to this sequential reader. `struct ArcWriter` and the writer index are owned exclusively by `writer.c`; `unpack.c` owns a distinct extraction index, retained entry clones and deferred-link state. Name-conflict semantics are shared through a typed AVL path index containing copied names, entry types and stable owner record numbers. Writer and extraction records remain separately owned; no generic untyped collection is introduced.
 
-The build selects one filekit filesystem implementation and one arc platform-text implementation at compile time. Filekit builds to its own static library without libarchive or pkg-config; the CLI links that library. Its public errors are explicitly translated to the unchanged ArcResult contract. The same explicit object list is used for CLI and API verification; unselected or stale objects are not linked. There is no runtime platform dispatch. The private text header contains platform-specific locale representation; native branches needed to call libarchive's wide APIs remain in its adapter.
+The build selects one filekit filesystem implementation and one arc platform-text implementation at compile time. Filekit builds to its own static library without libarchive or pkg-config; the CLI links that library. Its public errors are explicitly translated to the unchanged ArcResult contract. The build uses an explicit object list; unselected or stale objects are not linked. There is no runtime platform dispatch. The private text header contains platform-specific locale representation; native branches needed to call libarchive's wide APIs remain in its adapter.
 
 The mise tasks own build, formatting and black-box CLI checks; `.github/workflows/ci.yml` invokes them on macOS, Linux and Windows. Generated test fixtures and binaries remain outside the source tree. Pytest tests use an isolated uv project in `tests/`. The filekit sublibrary retains independent API checks and its own mise tasks; arc tests do not compile API or implementation harnesses. No third-party production dependency, formatter configuration, dynamic loader or runtime dispatch is introduced.
 
@@ -66,7 +69,7 @@ The mise tasks own build, formatting and black-box CLI checks; `.github/workflow
 
 ## 4. Backend boundary and extension
 
-There is one backend per build in the initial implementation. Backend replacement is a source-level change to the private archive implementation modules; the adapter is shared integration code, not a runtime backend interface. A replacement implementation must preserve lifecycle, error-value, path-safety and data semantics, but may support fewer or more archive configurations.
+There is one backend per build in the current implementation. Backend replacement is a source-level change to the private archive implementation modules; the adapter is shared integration code, not a runtime backend interface. A replacement implementation must preserve lifecycle, error-value, path-safety and data semantics, but may support fewer or more archive configurations.
 
 No runtime backend selector, registration mechanism, function-pointer dispatch table or dynamic backend loading is introduced. Such mechanisms require a future requirement to use multiple backends simultaneously.
 
@@ -86,10 +89,13 @@ typedef struct {
 
     /** Non-NULL outer compression identifier; "none" means no wrapper. */
     const char *compression;
+
+    /** NULL for no encryption; nonempty UTF-8 selects ZIP AES-256. */
+    const char *password;
 } ArcOptions;
 ```
 
-Initial named container identifiers are `tar`, `zip`, `7z`, `cpio`, `ar`, `iso9660`, `xar`, `warc`, `rar`, `cab` and `lha`. Initial named outer-compression identifiers are `none`, `gzip`, `bzip2`, `xz` and `zstd`.
+Named container identifiers are `tar`, `zip`, `7z`, `cpio`, `ar`, `iso9660`, `xar`, `warc`, `rar`, `cab` and `lha`. Named outer-compression identifiers are `none`, `gzip`, `bzip2`, `xz` and `zstd`.
 
 The named set is extensible. Identifiers belong to Arc; arbitrary backend option strings are not accepted. A new identifier requires a documented mapping and capability behavior.
 
@@ -117,7 +123,7 @@ Not every format/compression combination is usable. Capability queries and attem
 
 ```c
 /** Opaque archive writer. */
-typedef struct Arc Arc;
+typedef struct ArcWriter ArcWriter;
 
 /** Backend-independent operation outcome. */
 typedef enum {
@@ -133,7 +139,9 @@ typedef enum {
     ARC_OUT_OF_MEMORY,
     ARC_IO_ERROR,
     ARC_NOT_FOUND,
-    ARC_SELECTION_ERROR
+    ARC_SELECTION_ERROR,
+    ARC_PASSWORD_REQUIRED,
+    ARC_PASSWORD_REJECTED
 } ArcCode;
 
 /** Self-contained operation result returned by value. */
@@ -196,6 +204,7 @@ typedef enum {
 
 typedef struct {
     ArcDestinationMode destination_mode;
+    const char *password;
 } ArcUnpackOptions;
 
 /** Return OK to continue, or an error value to stop and propagate it. */
@@ -223,6 +232,8 @@ Error classification:
 | `OUT_OF_MEMORY` | An allocation failed. |
 | `NOT_FOUND` | At least one extraction selector matched no archive record. |
 | `SELECTION_ERROR` | A selected hard link has a missing or excluded target. |
+| `PASSWORD_REQUIRED` | Encrypted content needs a password. |
+| `PASSWORD_REJECTED` | The backend rejects the supplied password. |
 | `IO_ERROR` | Filesystem, permission, input/output or backend finalization failure. |
 
 An unrecognized input is classified as unsupported; malformed recognized input is classified as invalid where the backend provides sufficient information. Exact diagnostics are not a stable API. Operation errors retain their primary code while bounded secondary cleanup diagnostics may be appended. Successful operations report cleanup failure when one occurs. Sequential reader operations and close preserve the exact first stream failure even if context restoration also fails; listing with a visitor failure likewise returns that original result unchanged; later cleanup/conversion-context failures are intentionally subordinate in those two contracts. Backend warnings that would compromise the requested result must not be treated as success. No implicit external-program fallback is permitted.
@@ -272,7 +283,7 @@ ArcResult arc_get_capabilities(
  * ASCII case-insensitive. Unknown suffix: INVALID_ARGUMENT, no file created.
  * Same ownership, non-overwrite and cleanup rules as arc_create_ex.
  */
-ArcResult arc_create(const char *path, Arc **out);
+ArcResult arc_create(const char *path, ArcWriter **out);
 
 /**
  * Create a new archive writer with explicit configuration; suffix is ignored.
@@ -289,7 +300,7 @@ ArcResult arc_create(const char *path, Arc **out);
 ArcResult arc_create_ex(
     const char *path,
     const ArcOptions *options,
-    Arc **out);
+    ArcWriter **out);
 
 /**
  * Add an ordinary filesystem file, copying its data in chunks.
@@ -305,7 +316,7 @@ ArcResult arc_create_ex(
  * unsupported preservation returns UNSUPPORTED.
  */
 ArcResult arc_add_file(
-    Arc *writer,
+    ArcWriter *writer,
     const char *source_path,
     const char *entry_path);
 
@@ -325,7 +336,7 @@ ArcResult arc_add_file(
  * Duplicate paths, special objects and unsupported representations fail.
  */
 ArcResult arc_add_path(
-    Arc *writer,
+    ArcWriter *writer,
     const char *source_path,
     const char *entry_path);
 
@@ -341,7 +352,7 @@ ArcResult arc_add_path(
  * chunk API. Duplicate entry names are rejected.
  */
 ArcResult arc_add_text(
-    Arc *writer,
+    ArcWriter *writer,
     const char *entry_path,
     const char *text);
 
@@ -357,7 +368,7 @@ ArcResult arc_add_text(
  * Duplicate entry names are rejected.
  */
 ArcResult arc_begin_file(
-    Arc *writer,
+    ArcWriter *writer,
     const char *entry_path,
     uint64_t size);
 
@@ -372,7 +383,7 @@ ArcResult arc_begin_file(
  * Failure may follow partial backend output and invalidates the writer.
  */
 ArcResult arc_write_chunk(
-    Arc *writer,
+    ArcWriter *writer,
     const void *data,
     size_t size);
 
@@ -384,7 +395,7 @@ ArcResult arc_write_chunk(
  * Requires exactly the declared byte count. A short entry returns
  * SIZE_MISMATCH. Success makes the writer ready for another entry.
  */
-ArcResult arc_end_file(Arc *writer);
+ArcResult arc_end_file(ArcWriter *writer);
 
 /**
  * Finalize an archive and release its writer, even on failure.
@@ -395,7 +406,7 @@ ArcResult arc_end_file(Arc *writer);
  * Reports unfinished entries, prior failures and finalization errors.
  * A failed close may leave an incomplete file; no writer remains for retry.
  */
-ArcResult arc_close(Arc **writer);
+ArcResult arc_close(ArcWriter **writer);
 
 /**
  * Release an unfinished writer and remove its output file.
@@ -407,7 +418,7 @@ ArcResult arc_close(Arc **writer);
  * for retry. Callers must report cleanup failures without hiding the original
  * operation failure. The output path must not be concurrently replaced.
  */
-ArcResult arc_discard(Arc **writer);
+ArcResult arc_discard(ArcWriter **writer);
 
 /**
  * Extract an archive without overwriting existing files or links.
@@ -481,13 +492,14 @@ ArcResult arc_inspect(
 
 ### 8.1 Additive selection and verification API
 
-The existing `ArcUnpackOptions` structure and `arc_unpack` signature remain unchanged. Existing numeric error/feature values are not renumbered. The additional API is:
+Selection uses `ArcExtractOptions`; verification can read content without extracting it:
 
 ```c
 typedef struct {
     ArcDestinationMode destination_mode;
     const char *const *paths;
     size_t path_count;
+    const char *password;
 } ArcExtractOptions;
 
 ArcResult arc_unpack_ex(const char *archive_path,
@@ -501,6 +513,11 @@ A positive count requires valid selectors; zero selects everything. Selectors ar
 
 ```c
 typedef struct ArcReader ArcReader;
+typedef struct {
+    const char *password;
+} ArcReadOptions;
+ArcResult arc_reader_open_ex(const char *path, const ArcReadOptions *options,
+    ArcReader **out);
 ArcResult arc_reader_open(const char *path, ArcReader **out);
 ArcResult arc_reader_next(ArcReader *reader, ArcEntry *entry, int *end);
 ArcResult arc_reader_read(ArcReader *reader, void *buffer,
@@ -515,7 +532,7 @@ Next returns OK with end=1 at archive EOF and zeroes the entry. Repeated next th
 
 Read exposes only ordinary-file body bytes, including zero-filled sparse gaps. Directories, links and other non-file records return zero; link targets stay in metadata and are never followed. Repeated successful skip is a no-op, retains metadata and causes subsequent read to return zero. Next/skip can perform I/O/decompression and fail. Skips and early close do not promise content verification.
 
-Invalid arguments/state leave reader and outputs unchanged. Backend, integrity, size/overflow and character-conversion context failures poison the reader and retain the first failure. Subsequent well-formed stream operations return INVALID_STATE; close remains available. Failed next/read leave outputs unchanged. A failed read may modify buffer bytes; callers ignore the buffer for that call. Prior successful chunks cannot be retracted if later integrity checks fail. Actual ordinary-file EOF validates known sizes and backend-provided integrity signals. Unsupported encryption and ambiguous CPIO link groups fail during next.
+Invalid arguments/state leave reader and outputs unchanged. Backend, integrity, size/overflow and character-conversion context failures poison the reader and retain the first failure. Subsequent well-formed stream operations return INVALID_STATE; close remains available. Failed next/read leave outputs unchanged. A failed read may modify buffer bytes; callers ignore the buffer for that call. Prior successful chunks cannot be retracted if later integrity checks fail. Actual ordinary-file EOF validates known sizes and backend-provided integrity signals. Unsupported encryption and ambiguous CPIO link groups return errors; password failures may occur during content reading.
 
 Close consumes the owned pointer and sets it to NULL even on error; a NULL value is a successful no-op, a NULL pointer address is invalid. It does not drain unread records. The first retained stream failure outranks cleanup errors. The wrapper restores the caller's locale after each operation and publishes metadata/count outputs only after restoration succeeds. Failure to enter/restore that context poisons an active reader; close still releases it when entering the context fails. Backend buffering/seek/temp storage remain possible; constant total memory is not promised.
 
@@ -615,11 +632,27 @@ The API sets no extraction byte quota, entry-count quota or decompression-ratio 
 
 `arc_verify` reads every entry body to EOF without extracting files, checks declared ordinary-file sizes where known and propagates all backend integrity warnings/errors. It does not require safe extraction names, unique paths, supported host object types or normalized CPIO alias groups. It does not establish authenticity or safe extraction. Plain TAR has no per-file content checksum; same-size payload changes may remain undetected. Skipping entries in list/inspect or selective unpack is not equivalent to verification.
 
-Header decoding is separated from operation-specific policy. Listing/inspection and selected extraction still reject encrypted records and unsupported CPIO normalization. Verification also rejects encrypted records. Unselected encrypted records can be skipped only when the backend permits it without decryption. Password handling is not implemented and is not planned now.
+### 13.2 Passwords
 
-Implementation details, ownership, scope decisions and verification scenarios are recorded in [the implementation plan](plans/2026-10-13-selection-verification.md). Local macOS verification does not establish Linux/Windows results; those require the existing CI matrix.
+Creation with a non-NULL `ArcOptions.password` requires ZIP and uses AES-256.
+Only nonempty ordinary-file contents are encrypted; names, metadata, symbolic-link
+targets, empty files and directories remain visible. Other output formats reject
+password-protected creation before creating output.
 
-### 13.2 Not planned for implementation at present
+`ArcReadOptions`, `ArcUnpackOptions` and `ArcExtractOptions` accept a nonempty
+UTF-8 password; NULL means none. Empty or invalid UTF-8 passwords are rejected.
+Read options are used by `arc_reader_open_ex`, `arc_list_ex`, `arc_inspect_ex`
+and `arc_verify_ex`. Reading supports ZIP AES and ZipCrypto where available in
+the backend. Password errors can occur during content reading after a successful
+open. Metadata listing and skipping do not necessarily validate a password.
+Missing and rejected passwords use `ARC_PASSWORD_REQUIRED` and
+`ARC_PASSWORD_REJECTED`; backend diagnostics can limit classification.
+
+The CLI accepts `--password` before operands for each archive command.
+Command-line passwords can appear in shell history and process arguments.
+Interactive password entry and password callbacks are outside the API.
+
+### 13.3 Not planned for implementation at present
 
 - Compression-level selection, internal compression-method selection and compression-thread tuning.
 - Exact ownership, ACL, extended-attribute, security-descriptor or filesystem-flag restoration.
@@ -628,7 +661,7 @@ Implementation details, ownership, scope decisions and verification scenarios ar
 - Appending to or editing existing archives.
 - Creating RAR, CAB or LHA with the initial backend.
 - Multipart-volume handling.
-- Password handling, encryption/decryption, hidden filenames, per-entry passwords and interactive/callback password providers.
+- Hidden filenames, per-entry passwords and interactive/callback password providers.
 - Glob/regex/exclusion selection languages or implicit extraction of unselected link dependencies.
 - Special filesystem objects, hard links to directories/symlinks, Windows junction preservation and arbitrary reparse-point preservation.
 - Unsafe external-link extraction, unresolved Windows link types and copying files as a substitute for links.
@@ -642,12 +675,13 @@ Implementation details, ownership, scope decisions and verification scenarios ar
 
 ```text
 Usage:
-  arc pack [--format FORMAT] [--keep-root] ARCHIVE SOURCE...
-  arc unpack [--entry PATH]... ARCHIVE [DESTINATION]
-  arc list ARCHIVE
-  arc info ARCHIVE
-  arc verify ARCHIVE
+  arc pack [--format FORMAT] [--keep-root] [--password PASSWORD] ARCHIVE [SOURCE...]
+  arc unpack [--entry PATH]... [--password PASSWORD] ARCHIVE [DESTINATION]
+  arc list [--password PASSWORD] ARCHIVE
+  arc info [--password PASSWORD] ARCHIVE
+  arc verify [--password PASSWORD] ARCHIVE
   arc --help
+  arc --version
 
 Use -- to separate options from paths beginning with '-'.
 ```
@@ -668,6 +702,12 @@ A single actual directory contributes its contents at the archive root; --keep-r
 Recursion includes hidden objects and empty directories. Ignore files are not consulted. Symbolic links are stored without traversal. Exclude the created output by file identity, including hard-link aliases encountered during recursion; direct selection of that object fails. Duplicate stored names, special types and unsupported link representations are errors. Discard the output after a failed pack and report cleanup failures.
 
 Select format/outer compression from the longest recognized output suffix, case-insensitively for ASCII suffixes: `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2`, `.tar.xz`, `.tar.zst`, `.zip`, `.7z`. There is no default for an unknown suffix. --format accepts named container identifiers and supplies outer compression `none` for an unrecognized suffix. With a recognized suffix, its outer compression is retained only if the explicit container matches; a contradiction is a usage error. This preserves one clear source of truth without adding CLI compression tuning. Unsupported backend configurations are operational errors with no substitution.
+
+With no source operands, pack uses a directory in the current working directory
+named after the output basename with the full recognized suffix removed. An
+output directory prefix does not affect that source location. With `--format`
+and no recognized suffix, the full basename is used. The inferred source must
+be an actual directory; `--keep-root` retains it as with an explicit source.
 
 Other named formats are available through --format or the library without requiring a suffix for every format. Pack only creates an archive; it never unpacks automatically. The text helper remains a library operation, not a dedicated initial CLI mode.
 
@@ -699,7 +739,7 @@ Exit codes: 0 for success, 1 for operational failure, 2 for command-line usage e
 ## 15. API sequence examples
 
 ```c
-Arc *writer = NULL;
+ArcWriter *writer = NULL;
 ArcResult result = arc_create("example.tar.zst", &writer);
 
 if (result.code != ARC_OK)
@@ -747,57 +787,25 @@ result = arc_unpack("ppa.zip", ".", &merge);
 
 These independent fragments require normal result checks and writer cleanup. CLI policy chooses the root mapping; the library owns traversal, link handling and collision enforcement.
 
-## 16. Build recipes
+## 16. Build and integration
 
-These commands are implementation targets, not completed verification results.
+The mise tasks own local builds, formatting and black-box CLI tests. CI runs
+builds and tests on macOS, Linux and Windows; sanitizers run on macOS and Linux.
+Tests use a freshly built executable and isolated temporary fixtures. Filekit
+has a separate API suite. See the [test guide](../tests/README.md).
 
-The mise tasks provide local and CI entry points. They require mise, Bash, a C11 compiler, libarchive, pkg-config and clang-format. Python and uv versions are pinned in `mise.toml`; pytest dependencies are locked in `tests/uv.lock`. Arc verification invokes only the freshly built executable. These are development tools; the executable's runtime backend remains libarchive.
+The mise build emits `libarc.a` containing arc and private filekit objects.
+Libarchive remains external. CMake 3.21+ provides `arc::arc` for source-tree
+embedding and installed packages, plus relocatable pkg-config metadata.
+Only `arc.h` is installed as arc's public header. C++ consumers use C linkage;
+the implementation is compiled as C11. MSYS2 UCRT64 is the supported Windows
+toolchain; MSVC is not verified.
 
-```sh
-mise run build
-mise run run --help
-mise run format
-mise run check
-ARC_SANITIZE=1 CC=clang mise run test
-```
-
-Build products and generated verification fixtures are placed outside the source tree. ARC_BUILD_DIR can select the build directory; mise run run forwards arguments to the built executable. Windows verification runs from MSYS2 UCRT64; sanitizer verification is enabled on Linux/macOS. Formatting is checked once using the macOS LLVM toolchain to avoid formatter-version differences between distributions; build and regression verification run on all three operating systems. The GitHub workflow runs on pushes, pull requests and manual dispatch and calls these same recipes. No publishing/deployment target is defined.
-
-### macOS
-
-Install Apple command-line tools if needed and [Homebrew libarchive](https://formulae.brew.sh/formula/libarchive).
-
-```sh
-xcode-select --install
-brew install libarchive pkgconf mise
-mise trust
-mise install
-export PKG_CONFIG_PATH="$(brew --prefix libarchive)/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-mise run build
-```
-
-### Linux: Debian/Ubuntu
-
-Install [libarchive development files](https://packages.ubuntu.com/noble/libarchive-dev).
-
-```sh
-sudo apt update
-sudo apt install build-essential pkg-config libarchive-dev
-# Install mise, then run mise trust and mise install before invoking the build task.
-mise run build
-```
-
-### Windows: MSYS2 UCRT64
-
-Install [MSYS2](https://www.msys2.org/) and open its UCRT64 terminal. Update first; reopen the terminal if requested. Use the [UCRT64 libarchive build](https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-libarchive).
-
-```sh
-pacman -Syu
-pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-libarchive mingw-w64-ucrt-x86_64-pkgconf
-mise run build
-```
-
-The UCRT64 environment supplies the dependency DLL search path. Other launch environments must include the MSYS2 `ucrt64/bin` directory in PATH. Static deployment and MSVC builds are outside the initial build recipes.
+The CLI is optional and defaults off in an embedded CMake build. Library
+requirements stay scoped to the library; developer warnings are opt-in and
+Windows `-municode` applies only to the CLI. Consumer checks cover source and
+relocated installed CMake packages and pkg-config with C/C++ consumers.
+See [Building arc](build.md) for commands and options.
 
 ## 17. Acceptance criteria
 
@@ -812,7 +820,7 @@ The UCRT64 environment supplies the dependency DLL search path. Other launch env
 9. Statistics match file sizes and entry counts. Unknown sizes and arithmetic overflow cannot produce misleading successful results.
 10. POSIX metadata checks verify ordinary permissions subject to umask and absence of restored privilege bits. Existing root and nested directory checks verify retained permissions and ownership, absence of applied archive timestamps, and permitted natural timestamp changes. Cross-format metadata loss follows the documented policy.
 11. Compiler warnings are resolved. Sanitizer checks are used where available for lifecycle and memory verification. Real builds and execution on each target are recorded separately from review of the recipes.
-12. Temporary verification tools and fixtures remain outside the source tree. The private modules preserve the public API and both CLI/API clients link the selected complete object list.
+12. Temporary verification tools and fixtures remain outside the source tree. The private modules preserve the public API and CLI and library consumers link the selected complete object list.
 13. CLI exercises single-directory contents, --keep-root, multiple sources, hidden files, empty directories, compound suffixes, explicit format conflicts, automatic destination naming, existing explicit destinations and -- path parsing.
 14. Recursive packing excludes its output object by identity and rejects duplicate names across calls. A lone selected hard-link name remains an ordinary file; multiple selected aliases preserve identity in supported formats and fail explicitly in ZIP.
 15. Symbolic-link fixtures cover file/directory targets, chains, forward targets, dangling links, absolute/external targets, cycles and paths containing both links and `..`. Packing never follows targets; extraction never writes through links. Supported internal links round-trip, while unsafe extraction targets fail as documented.
@@ -826,9 +834,7 @@ Introduce backend dispatch only when one process must choose among multiple impl
 
 Before making any such change, preserve the existing human-oriented operation vocabulary and keep backend details private.
 
-## 19. Evidence and implementation obligations
-
-The linked Microsoft API documentation and upstream libarchive documentation/source were reviewed for this revision. They establish platform/library limitations, not completed verification of Arc or every installed dependency version. Record and test the actual linked version on all three targets.
+## 19. Backend limitations
 
 Important distinctions:
 
@@ -838,11 +844,11 @@ Important distinctions:
 - Windows reparse points are not interchangeable with symbolic links.
 - A chunk API does not establish constant memory consumption or non-seekable I/O support.
 
-The design intentionally adds entry-name/identity indexes and deferred link resolution because the accepted CLI and preservation contracts require them. It does not promise the earlier ordinary-file-only implementation's code size. All Arc-owned helper failures and returned native/backend failures flow through explicit result values.
+The design intentionally adds entry-name/identity indexes and deferred link resolution because the accepted CLI and preservation contracts require them. All Arc-owned helper failures and returned native/backend failures flow through explicit result values.
 
 ### Accepted backend failure boundary
 
-The user approved using unmodified libarchive with the following boundary: Arc-owned failures and returned dependency failures use result values, while dependency-internal fatal termination is outside the return-value guarantee. Certain libarchive entry-string getters call a fatal helper on allocation failure; that helper exits the process. No exception interception, signal recovery, subprocess isolation or patched libarchive build is added.
+Arc uses unmodified libarchive with the following boundary: Arc-owned failures and returned dependency failures use result values, while dependency-internal fatal termination is outside the return-value guarantee. Certain libarchive entry-string getters call a fatal helper on allocation failure; that helper exits the process. No exception interception, signal recovery, subprocess isolation or patched libarchive build is added.
 
 Evidence: [entry string getters](https://github.com/libarchive/libarchive/blob/master/libarchive/archive_entry.c) and [fatal helper](https://github.com/libarchive/libarchive/blob/master/libarchive/archive_util.c).
 
@@ -881,40 +887,4 @@ ArcResult cleanup = arc_reader_close(&reader);
 /* Report r if it failed; otherwise report any cleanup failure. */
 ```
 
-The current public header is authoritative for all reader signatures and lifetime/error contracts. This addition does not enable passwords or generic callback-based I/O.
-
-### Sequential reader verification evidence
-
-On macOS with libarchive 3.8.9, a clean build and ASan/UBSan run passed 154 CLI/API checks, including a separate sequential-reader API executable. Its assertions cover invalid arguments/state without consumption, metadata lifetime through read/skip, caller-retained name copies, chunk data and short final chunks, empty/non-file records, link metadata without target reading, repeated skip/EOF, automatic skip after partial reads, early close without draining, first-error retention, failed-output sentinels, damaged headers/CRC/truncated bodies, unsupported encrypted/CPIO records, unsafe/duplicate metadata records, logical sparse gaps and locale restoration. Strict prototype/declaration checks passed. Linux/Windows execution remains the responsibility of the existing CI matrix and is not claimed from local macOS results.
-
-
-### API hardening implementation and verification
-
-The six audit findings are implemented in [the hardening plan](plans/2026-10-13-api-contract-hardening.md): writer output anchoring, iterative link/parent traversal, checked capability probes, cleanup-result precedence, public writer state documentation and balanced path/identity indexes. Public signatures, structs, numeric codes and capability bits are unchanged. No production dependency or runtime fault-injection interface was added.
-
-On macOS with libarchive 3.8.9, the original 154 CLI/API checks passed before the changes. The expanded ordinary and ASan/UBSan runs passed 160 checks, including five hardening harnesses and a disposable reproduction of the old relative-path deletion. The hardened writer preserves the alternate-directory sentinel; a test-only build bypassing path anchoring reproduces the original wrong deletion and intentionally fails the same assertion. All affected production units passed -Wstrict-prototypes, -Wmissing-prototypes and -Werror syntax checks; formatting passed.
-
-Link-graph harnesses cover forward/reverse chains of 20,000 hard/symbolic records, long cycles, continuation after nested symlinks, missing/excluded hard-link targets, target types, conflicting metadata, dangling/escaping symlinks and failed stack allocations. The ordinary POSIX run limits the test executable's stack to 256 KiB using Bash ulimit. ASan/UBSan uses the ordinary stack limit. Hard-link creation is substituted in the graph harness to isolate graph behavior from platform per-file link-count limits; existing real extraction fixtures continue to check filesystem identity and symlink creation.
-
-Path-index checks compare against the independent pairwise conflict rules on small generated inputs, preserve host name equivalence and exercise failed comparison output/insert invariants. At 100,000 records, ascending and descending flat path runs each needed 6,275,733 ordered comparisons; nested paths needed 9,348,056. Ordinary local CPU timings were approximately 0.16–0.23 seconds for each complete insert/lookup run. Identity insertion and lookup needed 3,137,892 comparisons for either input order. CI enforces comparison-growth bounds, not machine-dependent timing. Pre-change timing was not captured; baseline performance evidence is the pairwise algorithm and its N(N-1)/2 conflict comparisons, not an asserted measured speedup.
-
-Fault-injection executables compile separate backend/filesystem/text/writer objects into temporary storage. They verify ENOMEM precedence, technical setup errors, unexpected format warnings, RAR5 failures, failed probe cleanup, create/close/discard/extraction cleanup, first-error retention across failed locale entry/restoration, exact reader/visitor results and bounded messages. Substitutes release real resources before returning injected cleanup failures where appropriate. Production object lists never include these substitutes.
-
-Windows-specific checks additionally cover an output under a long Unicode path, drive-relative anchoring and UNC conversion without requiring a network share. These checks and Linux execution require the existing CI matrix; neither platform was executed in this macOS session. Filesystem replacement races, backend-internal fatal termination, quotas and transactional publication remain outside the accepted contract.
-
-
-### Filekit extraction
-
-The filesystem implementations now belong to the independent [filekit sublibrary](../filekit/README.md). Its public interface has no arc or libarchive types. Filekit owns exclusive creation, native identity, UTF-8 path conversion, complete writes, links, time setting and POSIX permission restriction. Permission restriction and time setting are separate primitives; archive metadata ordering and the choice to leave Windows ACLs alone belong to unpack. Existing public arc signatures, error codes and lifecycle contracts are retained. Recursive source traversal still uses libarchive. No generic backend registry or runtime platform dispatch was added.
-
-Filekit extraction verification on macOS: ordinary and ASan/UBSan runs both passed the 160 existing CLI/API checks and the independent filekit API executable. Standalone filekit compilation enables strict prototype/declaration warnings and does not query libarchive. All selected arc translation units also passed strict C11 prototype/declaration syntax checks; formatting passed. Independent checks cover invalid UTF-8 and output sentinels, exclusive creation/no truncation, binary writes, Unicode paths, absolute-path identity, real hard links, timestamps, POSIX umask-preserving permission restriction and no-follow symbolic-link time changes. Linux and Windows execution remains delegated to the existing CI matrix and was not performed locally.
-
-
-## CLI test infrastructure migration (2026-10-13)
-
-The current entry point is `mise run test`: it always builds arc before pytest
-starts. The independent uv project in `tests/` contains function-scoped fixtures
-and black-box tests for CLI inputs, exit status, output and filesystem effects.
-The historical API/hardening results above describe earlier verification; their
-implementation-coupled harnesses are no longer in the arc suite. Filekit API
-verification remains separate under `mise run filekit:verify`.
+The current public header is authoritative for all reader signatures and lifetime/error contracts. Generic callback-based I/O is outside the public API.
