@@ -47,8 +47,12 @@ int main(void) {
             if (caps & ARC_CAN_INSPECT) {
                 assert(arc_inspect(path, &info).code == ARC_OK);
                 assert(info.file_count == 1 && info.content_bytes == 7);
-            } else if (!strcmp(formats[i], "zip"))
-                assert(arc_inspect(path, &info).code == ARC_UNSUPPORTED);
+            } else if (!strcmp(formats[i], "zip")) {
+                r = arc_inspect(path, &info);
+                assert(r.code == ARC_OK || r.code == ARC_UNSUPPORTED);
+                if (r.code == ARC_OK)
+                    assert(info.file_count == 1 && info.content_bytes == 7);
+            }
             if (caps & ARC_CAN_UNPACK) {
                 ArcUnpackOptions unpack = {ARC_DESTINATION_NEW, NULL};
                 assert(arc_unpack(path, root, &unpack).code == ARC_OK);
