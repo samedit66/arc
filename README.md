@@ -26,7 +26,8 @@ arc unpack project.zip                 # unpack into ./project
 
 ## Installation
 
-Installs the development version from `main`.
+Installs the latest stable release. Before the first release, select `main` explicitly
+with `--version main` (shell) or `-Version main` (PowerShell).
 
 macOS / Linux:
 
@@ -133,3 +134,7 @@ Filesystem operations live in [filekit](filekit/README.md), a separate C11
 sublibrary with its own checks and no libarchive dependency.
 
 The [design document](docs/design.md) describes the current architecture and contracts.
+
+## License
+
+Licensed under [Apache-2.0](LICENSE).

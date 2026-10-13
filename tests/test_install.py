@@ -22,6 +22,7 @@ def installer(tmp_path):
     tools.mkdir()
     source = tmp_path / "source fixture"
     (source / "scripts").mkdir(parents=True)
+    (source / "VERSION").write_text("0.1.0\n", newline="\n")
     temporary = tmp_path / "temporary"
     temporary.mkdir()
     install_dir = tmp_path / "installed with spaces and 'quotes'"
@@ -37,7 +38,7 @@ exec "{original}" "$@"
     write_script(tools / "git", '''
 if [ "$1" = clone ]; then
     [ "${FAIL_STAGE:-}" != clone ] || exit 7
-    [ "$2" = --depth ] && [ "$3" = 1 ] && [ "$4" = --branch ] && [ "$5" = main ]
+    [ "$2" = --depth ] && [ "$3" = 1 ] && [ "$4" = --branch ] && [ "$5" = "$TEST_REF" ]
     [ "$6" = --single-branch ] && [ "$7" = https://github.com/samedit66/arc.git ]
     cp -R "$TEST_SOURCE" "$8"
 else
@@ -55,6 +56,7 @@ export ARC_BUILD_CONFIG=1 CC=cc
 shift 2
 exec "$@"
 ''')
+    write_script(tools / "curl", '[ "${FAIL_STAGE:-}" != release ] || exit 22\nprintf "https://github.com/samedit66/arc/releases/tag/v0.1.0"\n')
     write_script(tools / "pkg-config", '[ "${FAIL_STAGE:-}" != dependency ]\n')
     write_script(source / "scripts/build.sh", '''
 [ "${FAIL_STAGE:-}" != build ] || exit 8
@@ -80,12 +82,12 @@ chmod 755 "$ARC_BUILD_DIR/arc$TEST_EXE"
     shell = shell or shutil.which("bash")
     assert shell, "Installer tests require the project's Bash/sh environment"
 
-    def invoke(*arguments, stage=None, commit=COMMIT, piped=False, platform=None, script=None):
+    def invoke(*arguments, stage=None, commit=COMMIT, piped=False, platform=None, script=None, ref="main"):
         env = dict(environment, FAIL_STAGE=stage or "", TEST_COMMIT=commit,
-                   TEST_OS=platform or host_os)
+                   TEST_OS=platform or host_os, TEST_REF="v0.1.0" if ref in (None, "latest") else ref)
         command = [shell, "-s", "--"] if piped else [shell, str(INSTALLER)]
         result = subprocess.run(
-            [*command, *arguments], input=(script or INSTALLER.read_text()) if piped else None,
+            [*command, *(["--version", ref] if ref else []), *arguments], input=(script or INSTALLER.read_text()) if piped else None,
             env=env, cwd=tmp_path, capture_output=True, text=True, timeout=30,
         )
         assert not list(temporary.iterdir()), result.stderr
@@ -208,3 +210,31 @@ def test_unwritable_directory_preserves_previous_binary(installer):
         assert binary.read_bytes() == b"previous binary"
     finally:
         directory.chmod(0o700)
+
+
+@pytest.mark.parametrize("ref", [None, "latest", "v0.1.0"])
+def test_stable_release_selection(installer, ref):
+    invoke, directory, _, suffix = installer
+    result = invoke("--install-dir", str(directory), ref=ref)
+    assert result.returncode == 0, result.stderr
+    assert "Installed arc 0.1.0 at" in result.stdout
+    assert "main." not in (directory / f"arc{suffix}").read_text()
+
+
+def test_no_stable_release_preserves_binary(installer):
+    invoke, directory, _, suffix = installer
+    directory.mkdir()
+    binary = directory / f"arc{suffix}"
+    binary.write_bytes(b"previous")
+    result = invoke("--install-dir", str(directory), ref=None, stage="release")
+    assert result.returncode != 0
+    assert "No stable release" in result.stderr
+    assert binary.read_bytes() == b"previous"
+
+
+def test_release_tag_must_match_version(installer):
+    invoke, directory, _, _ = installer
+    result = invoke("--install-dir", str(directory), ref="v9.0.0")
+    assert result.returncode != 0
+    assert "disagrees with VERSION" in result.stderr
+    assert not directory.exists()

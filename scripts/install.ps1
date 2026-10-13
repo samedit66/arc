@@ -2,7 +2,8 @@
 [CmdletBinding()]
 param(
     [string] $InstallDir = (Join-Path $env:USERPROFILE '.local\bin'),
-    [string] $Msys2Root = 'C:\msys64'
+    [string] $Msys2Root = 'C:\msys64',
+    [string] $Version = 'latest'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -20,9 +21,20 @@ if (-not (Test-Path -LiteralPath $bash -PathType Leaf) -or
     throw "MSYS2 UCRT64 not found at $Msys2Root. Install it first, or pass -Msys2Root."
 }
 
+if ($Version -eq 'latest') {
+    try {
+        $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/samedit66/arc/releases/latest'
+    } catch {
+        throw 'Cannot resolve a stable release; use -Version main explicitly before the first release.'
+    }
+    $Version = $release.tag_name
+}
+if ($Version -ne 'main' -and $Version -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
+    throw 'Expected main or a release tag vMAJOR.MINOR.PATCH.'
+}
 $temporary = Join-Path ([IO.Path]::GetTempPath()) ('arc-install-' + [Guid]::NewGuid())
 $variables = @('MSYSTEM', 'MSYS2_PATH_TYPE', 'CHERE_INVOKING',
-    'ARC_WINDOWS_INSTALL_SCRIPT', 'ARC_WINDOWS_INSTALL_DIR')
+    'ARC_WINDOWS_INSTALL_SCRIPT', 'ARC_WINDOWS_INSTALL_DIR', 'ARC_WINDOWS_INSTALL_VERSION')
 $previous = @{}
 foreach ($name in $variables) {
     $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
@@ -30,7 +42,7 @@ foreach ($name in $variables) {
 try {
     New-Item -ItemType Directory -Path $temporary | Out-Null
     $script = Join-Path $temporary 'install.sh'
-    Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/samedit66/arc/main/scripts/install.sh' -OutFile $script
+    Invoke-WebRequest -UseBasicParsing -Uri "https://raw.githubusercontent.com/samedit66/arc/$Version/scripts/install.sh" -OutFile $script
 
     # The login shell selects UCRT64's compiler and DLLs while retaining mise
     # from the Windows PATH. Paths travel in environment variables, not shell code.
@@ -39,11 +51,12 @@ try {
     $env:CHERE_INVOKING = '1'
     $env:ARC_WINDOWS_INSTALL_SCRIPT = $script
     $env:ARC_WINDOWS_INSTALL_DIR = $InstallDir
+    $env:ARC_WINDOWS_INSTALL_VERSION = $Version
     $command = @'
 set -eu
 script=$(cygpath -u "$ARC_WINDOWS_INSTALL_SCRIPT")
 destination=$(cygpath -u "$ARC_WINDOWS_INSTALL_DIR")
-exec sh "$script" --install-dir "$destination"
+exec sh "$script" --install-dir "$destination" --version "$ARC_WINDOWS_INSTALL_VERSION"
 '@
     # stdin avoids Windows PowerShell's legacy native-argument quote handling.
     $command | & $bash --login -s
