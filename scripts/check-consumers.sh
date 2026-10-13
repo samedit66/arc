@@ -25,6 +25,12 @@ if cmake -S tests/consumer -B "$work/incompatible" -DCMAKE_PREFIX_PATH="$work/re
     exit 1
 fi
 export PKG_CONFIG_PATH="$work/relocated/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+case "$(uname -s)" in
+    MINGW*|MSYS*)
+        # Native pkg-config needs Windows paths and a semicolon-separated list.
+        export PKG_CONFIG_PATH="$(cygpath -m -p "$PKG_CONFIG_PATH")"
+        ;;
+esac
 [[ "$(pkg-config --modversion arc)" == "$(cat VERSION)" ]]
 read -r -a compile_flags <<< "$(pkg-config --cflags arc)"
 read -r -a libraries <<< "$(pkg-config --libs arc)"
