@@ -16,6 +16,7 @@ of its own. That made the API easier to maintain—and gave me a tool of my own.
 - Unicode and cross-platform support from the start 🌍
 - Handles most everyday archive tasks
 - Easy to embed in your application
+- Respects [NO_COLOR](https://no-color.org/) environment variable
 
 ## In a hurry?
 
