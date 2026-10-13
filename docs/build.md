@@ -4,7 +4,13 @@ Run the following commands from the repository root.
 
 The project targets macOS, Linux and Windows through MSYS2 UCRT64. Install
 mise, Bash, a C11 compiler, libarchive development files and pkg-config. On
-macOS the build uses Homebrew's libarchive. `mise.toml` pins Python and uv for
+macOS the build uses Homebrew's libarchive. Compiler defaults (Clang on macOS,
+GCC on Linux and MSYS2 Windows), C11 warning flags, platform selection,
+Windows compile/link flags and sanitizer flags are declared in the root
+`mise.toml`. The scripts compile and link using that environment; `pkg-config`
+provides libarchive's include and link arguments. Both arc and its embedded
+filekit build use the same compiler. Existing `PKG_CONFIG_PATH` entries are
+preserved after the Homebrew libarchive path on macOS. `mise.toml` pins Python and uv for
 the development tools; these are not runtime dependencies of arc.
 
 ```sh
@@ -16,7 +22,12 @@ mise run run -- --help
 
 Build output stays outside the source tree, in the temporary directory by
 default. Set `ARC_BUILD_DIR` to choose another location and `CC` to choose the
-compiler. `mise run run` builds the application and forwards its arguments.
+compiler; `AR` selects the static-library archiver. `ARC_VERSION` sets the
+version (default `dev`), and `ARC_SANITIZE=1` enables ASan/UBSan on macOS or
+Linux. Direct calls to `scripts/build.sh`, `scripts/run.sh` and
+`scripts/test.sh` load the configuration through `mise exec` when necessary.
+Standalone `filekit/build.sh` retains its own defaults and does not require mise.
+`mise run run` builds the application and forwards its arguments.
 
 For library use, include `arc.h` and link against the arc objects built by
 `mise run build`, `filekit/libfilekit.a` from the build directory, and libarchive.

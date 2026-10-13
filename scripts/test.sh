@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+if [[ "${ARC_BUILD_CONFIG:-}" != 1 ]]; then
+    exec mise exec -- bash scripts/test.sh "$@"
+fi
 source scripts/build-env.sh
 export ARC_BINARY="$build_dir/arc$exe"
 if command -v cygpath >/dev/null 2>&1; then

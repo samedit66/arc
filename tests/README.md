@@ -23,7 +23,7 @@ in `tests/.venv`; dependencies are declared in `pyproject.toml` and pinned in
 
 `mise run verify` is an alias for the build-and-test task. `mise run check` also
 checks C formatting and requires clang-format. For an ASan/UBSan run on macOS
-or Linux:
+or Linux (mise preserves the explicit compiler and output directory):
 
 ```sh
 ARC_SANITIZE=1 CC=clang ARC_BUILD_DIR=/tmp/arc-sanitize mise run test
