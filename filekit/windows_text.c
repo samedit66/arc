@@ -30,9 +30,9 @@ int fk_reserved_component(const char *s, size_t n) {
 
 static FilekitResult validate_windows_path(const char *s) {
     const char *p = s;
-    if (!strncmp(p, "\\\\?\\UNC\\", 8))
+    if (!strncmp(p, "\\\\?\\UNC\\", 8) || !strncmp(p, "//?/UNC/", 8))
         p += 8;
-    else if (!strncmp(p, "\\\\?\\", 4))
+    else if (!strncmp(p, "\\\\?\\", 4) || !strncmp(p, "//?/", 4))
         p += 4;
     if (((p[0] >= 'A' && p[0] <= 'Z') || (p[0] >= 'a' && p[0] <= 'z')) && p[1] == ':')
         p += 2;

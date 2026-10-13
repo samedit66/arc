@@ -159,7 +159,11 @@ def test_existing_symlink_parent_is_rejected(arc, make_tar, tmp_path, symlinks_a
 
 def test_dangling_symlink(arc, make_tar, tmp_path, symlinks_available):
     archive = make_tar([link_entry("dangling", "missing")])
-    arc("unpack", archive, "output")
+    result = arc("unpack", archive, "output", success=os.name != "nt")
+    if os.name == "nt":
+        assert "Unknown Windows link target type" in result.stderr
+        assert not (tmp_path / "output/dangling").is_symlink()
+        return
     assert (tmp_path / "output/dangling").is_symlink()
     assert not (tmp_path / "output/dangling").exists()
 

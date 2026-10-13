@@ -90,7 +90,12 @@ def test_selected_hardlink_cycle_is_rejected(arc, make_tar):
 
 def test_selected_symbolic_link_can_be_dangling(arc, make_tar, tmp_path, symlinks_available):
     archive = make_tar([link_entry("alias", "target"), file_entry("target", b"not-selected")])
-    arc("unpack", "--entry", "alias", archive, "output")
+    result = arc("unpack", "--entry", "alias", archive, "output", success=os.name != "nt")
+    if os.name == "nt":
+        assert "Unknown Windows link target type" in result.stderr
+        assert not (tmp_path / "output/alias").is_symlink()
+        assert not (tmp_path / "output/target").exists()
+        return
     assert (tmp_path / "output/alias").is_symlink()
     assert not (tmp_path / "output/target").exists()
 

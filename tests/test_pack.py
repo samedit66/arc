@@ -18,6 +18,7 @@ def test_python_reads_packed_contents(arc, source_tree, tmp_path, suffix):
             names = set(archive.namelist())
             read = archive.read
             assert names == {"empty/", "sub/", "plain.txt", ".hidden", "sub/text-текст.txt", "zero"}
+            assert archive.getinfo("sub/text-текст.txt").flag_bits & 0x800
             for path in source_tree.rglob("*"):
                 if path.is_file():
                     assert read(path.relative_to(source_tree).as_posix()) == path.read_bytes()

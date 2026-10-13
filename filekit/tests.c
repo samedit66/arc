@@ -56,6 +56,15 @@ int main(void) {
     CHECK(!filekit_compare_identity(info.identity, anchored.identity));
 #ifdef _WIN32
     CHECK(absolute[0] == '\\');
+    char *normalized = malloc(strlen(absolute) + 1);
+    CHECK(normalized);
+    strcpy(normalized, absolute);
+    for (char *p = normalized; *p; ++p)
+        if (*p == '\\')
+            *p = '/';
+    OK(filekit_info(normalized, &anchored));
+    CHECK(filekit_same_identity(info, anchored));
+    free(normalized);
 #else
     CHECK(absolute[0] == '/');
     FILE *input = fopen(absolute, "rb");
