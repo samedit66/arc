@@ -225,3 +225,14 @@ def test_keep_root_with_explicit_directory(arc, source_tree, tmp_path):
     arc("pack", "--keep-root", "wrapped.tar", source_tree)
     with tarfile.open(tmp_path / "wrapped.tar") as archive:
         assert archive.extractfile("source/.hidden").read() == b"hidden"
+
+
+def test_cpio_single_selected_hardlink(arc, tmp_path):
+    (tmp_path / "a").write_bytes(b"shared")
+    os.link(tmp_path / "a", tmp_path / "b")
+    arc("pack", "--format", "cpio", "single.cpio", "a")
+    assert "a" in arc("list", "single.cpio").stdout
+    assert "Files: 1" in arc("info", "single.cpio").stdout
+    arc("verify", "single.cpio")
+    arc("unpack", "single.cpio", "output")
+    assert (tmp_path / "output/a").read_bytes() == b"shared"

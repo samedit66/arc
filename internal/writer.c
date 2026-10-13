@@ -359,6 +359,8 @@ static ArcResult pack_entry(ArcWriter *w, struct archive *disk, struct archive_e
     clean_metadata(e);
     archive_entry_set_pathname_utf8(e, name);
     archive_entry_set_hardlink(e, NULL);
+    if (type == ARC_ENTRY_FILE)
+        archive_entry_set_nlink(e, 1);
     if (alias) {
         archive_entry_set_hardlink_utf8(e, alias);
         archive_entry_set_size(e, 0);
