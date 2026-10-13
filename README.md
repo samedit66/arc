@@ -24,6 +24,41 @@ arc pack project.zip ./src ./README.md # pack your files
 arc unpack project.zip                 # unpack into ./project
 ```
 
+## Installation
+
+> [!WARNING]
+> This installs the development version from `main`, not a release; it may not
+> have passed CI. The installer downloads and runs repository build scripts and
+> calls `mise trust` to allow execution of its mise configuration. It replaces an
+> existing regular `arc` binary in the installation directory. System dependencies
+> must be installed beforehand and remain available to run arc.
+
+macOS / Linux:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/samedit66/arc/main/scripts/install.sh | sh
+```
+
+Windows (PowerShell, with MSYS2 UCRT64 installed):
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/samedit66/arc/main/scripts/install.ps1)))
+```
+
+Requires Git, mise, Bash, a C compiler supporting C11, `ar`, pkg-config and
+libarchive development files (Homebrew's libarchive on macOS). See
+[Building arc](docs/build.md) for setup; the current shell installer also works
+inside MSYS2 UCRT64.
+
+Installs to `~/.local/bin` by default; pass `--install-dir /absolute/path` via
+`sh -s --` to choose another directory. Add that directory to your `PATH` if needed.
+PowerShell installs to `%USERPROFILE%\.local\bin`; use `-InstallDir` to change it
+and `-Msys2Root` if MSYS2 is outside `C:\msys64`. To run from PowerShell, also
+add MSYS2's `ucrt64\bin` to `PATH` for libarchive's runtime DLLs.
+
+To uninstall, run `rm -- "$HOME/.local/bin/arc"` for the default installation,
+or remove `arc` from your custom installation directory; on Windows, remove `arc.exe`.
+
 ## CLI
 
 Start with the everyday stuff:

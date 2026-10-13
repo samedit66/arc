@@ -16,6 +16,14 @@ paths or build objects. Direct pytest startup without that input is rejected.
 
 ## Environment and checks
 
+`test_install.py` runs the installer with local Git, mise and build substitutes.
+It requires no network or system package installation and checks piped input,
+updates, destination validation, temporary-file cleanup and preservation of an
+existing binary after download, dependency, build, copy or publication failures.
+`test_install_windows.py` uses real PowerShell and MSYS2 Bash on Windows,
+replacing the download with a local shell script. It checks path quoting,
+UCRT64 selection, failure propagation, environment restoration and cleanup.
+
 The suite treats arc as a black box: it invokes the executable and checks exit
 status, output, archives and filesystem effects. The Python environment lives
 in `tests/.venv`; dependencies are declared in `pyproject.toml` and pinned in
