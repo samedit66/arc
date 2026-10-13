@@ -18,7 +18,8 @@ compiler="${CC:-cc}"
 if [[ "${ARC_BUILD_CONFIG:-}" == 1 ]]; then
     read -r -a flags <<< "$ARC_CFLAGS"
     read -r -a sanitizer_flags <<< "$FILEKIT_SANITIZER_FLAGS"
-    flags+=(-Wstrict-prototypes -Wmissing-prototypes "${sanitizer_flags[@]}")
+    # Bash 3.2 treats empty arrays as unset under nounset.
+    flags+=(-Wstrict-prototypes -Wmissing-prototypes ${sanitizer_flags[@]+"${sanitizer_flags[@]}"})
 else
     # Standalone filekit builds do not require mise or the arc project.
     flags=(-std=c11 -D_FILE_OFFSET_BITS=64 -Wall -Wextra -Wpedantic -Werror -Wstrict-prototypes -Wmissing-prototypes)
