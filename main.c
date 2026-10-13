@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <locale.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,18 +21,76 @@
 #include <windows.h>
 #include <wchar.h>
 #else
+#include <langinfo.h>
 #include <unistd.h>
 #endif
+
+/* Presentation belongs to the CLI; NO_COLOR disables ANSI color, not emoji. */
+typedef enum { MESSAGE_SUCCESS, MESSAGE_ERROR, MESSAGE_WARNING } MessageKind;
+
+static void message(MessageKind kind, const char *label, const char *format, ...) {
+    FILE *out = kind == MESSAGE_SUCCESS ? stdout : stderr;
+    const char *term = getenv("TERM");
+    const char *no_color = getenv("NO_COLOR");
+    int terminal = 0, unicode = 0;
+#ifdef _WIN32
+    HANDLE handle = GetStdHandle(out == stdout ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE);
+    DWORD original_mode = 0;
+    int changed_mode = 0;
+    if (GetConsoleMode(handle, &original_mode)) {
+        terminal = 1;
+        unicode = GetConsoleOutputCP() == CP_UTF8;
+    }
+#else
+    terminal = isatty(fileno(out));
+    const char *codeset = nl_langinfo(CODESET);
+    unicode = !strcmp(codeset, "UTF-8") || !strcmp(codeset, "UTF8");
+#endif
+    if (term && !strcmp(term, "dumb"))
+        terminal = 0;
+    int color = terminal && !(no_color && *no_color);
+#ifdef _WIN32
+    if (color && !(original_mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING)) {
+        changed_mode = SetConsoleMode(handle, original_mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+        color = changed_mode;
+    }
+#endif
+    if (terminal && unicode) {
+        const char *emoji[] = {"✅ ", "❌ ", "⚠️ "};
+        fputs(emoji[kind], out);
+    }
+    if (color) {
+        const char *colors[] = {"\033[32m", "\033[31m", "\033[33m"};
+        fputs(colors[kind], out);
+    }
+    fputs(label, out);
+    if (color)
+        fputs("\033[0m", out);
+    va_list arguments;
+    va_start(arguments, format);
+    vfprintf(out, format, arguments);
+    va_end(arguments);
+    fputc('\n', out);
+#ifdef _WIN32
+    if (changed_mode) {
+        fflush(out);
+        SetConsoleMode(handle, original_mode);
+    }
+#endif
+}
 
 static int report(ArcResult r) {
     if (r.code == ARC_OK)
         return 0;
-    fprintf(stderr, "Error: %s\n", r.message);
+    message(MESSAGE_ERROR, "Error:", " %s", r.message);
     return 1;
 }
 
 static int usage(const char *command, int error) {
     FILE *out = error ? stderr : stdout;
+    if (error)
+        message(MESSAGE_ERROR, "Error:", " invalid arguments%s%s.", command ? " for " : "",
+                command ? command : "");
     if (!command || !strcmp(command, "pack"))
         fprintf(out, "Usage: arc pack [--format FORMAT] [--keep-root] [--password VALUE] ARCHIVE "
                      "[SOURCE...]\n");
@@ -145,14 +204,14 @@ static int source_directory(const char *path, int *directory) {
 #ifdef _WIN32
     wchar_t *w = to_wide_path(path);
     if (!w) {
-        fprintf(stderr, "Error: cannot convert source path.\n");
+        message(MESSAGE_ERROR, "Error:", " cannot convert source path.");
         return 1;
     }
     DWORD attributes = GetFileAttributesW(w);
     DWORD native_error = GetLastError();
     free(w);
     if (attributes == INVALID_FILE_ATTRIBUTES) {
-        fprintf(stderr, "Error: cannot inspect '%s': Windows error %lu.\n", path,
+        message(MESSAGE_ERROR, "Error:", " cannot inspect '%s': Windows error %lu.", path,
                 (unsigned long)native_error);
         return 1;
     }
@@ -161,7 +220,7 @@ static int source_directory(const char *path, int *directory) {
 #else
     struct stat s;
     if (lstat(path, &s) < 0) {
-        fprintf(stderr, "Error: cannot inspect '%s': %s.\n", path, strerror(errno));
+        message(MESSAGE_ERROR, "Error:", " cannot inspect '%s': %s.", path, strerror(errno));
         return 1;
     }
     *directory = S_ISDIR(s.st_mode);
@@ -253,10 +312,10 @@ static int pack_sources(const char *output, const ArcOptions *options, int keep_
     }
     r = arc_close(&writer);
     if (report(r)) {
-        fprintf(stderr, "Incomplete archive may remain: %s\n", output);
+        message(MESSAGE_WARNING, "Incomplete archive may remain:", " %s", output);
         return 1;
     }
-    printf("Created %s\n", output);
+    message(MESSAGE_SUCCESS, "Created", " %s", output);
     return 0;
 }
 
@@ -293,11 +352,11 @@ static int pack(int count, char **args) {
     int sources = count - i;
     const ArchiveSuffix *suffix = ar_suffix_of(output, 1);
     if (!format && !suffix) {
-        fprintf(stderr, "Error: cannot infer output format; specify --format.\n");
+        message(MESSAGE_ERROR, "Error:", " cannot infer output format; specify --format.");
         return 2;
     }
     if (format && suffix && strcmp(format, suffix->format)) {
-        fprintf(stderr, "Error: --format conflicts with the output suffix.\n");
+        message(MESSAGE_ERROR, "Error:", " --format conflicts with the output suffix.");
         return 2;
     }
     ArcOptions options = {format ? format : suffix->format, suffix ? suffix->compression : "none",
@@ -313,7 +372,8 @@ static int pack(int count, char **args) {
         source[strlen(source) - strlen(suffix->suffix)] = 0;
     if (!*source || !strcmp(source, ".") || !strcmp(source, "..")) {
         free(source);
-        fprintf(stderr, "Error: cannot derive a source directory; specify sources explicitly.\n");
+        message(MESSAGE_ERROR,
+                "Error:", " cannot derive a source directory; specify sources explicitly.");
         return 2;
     }
     int directory;
@@ -323,7 +383,8 @@ static int pack(int count, char **args) {
         return 1;
     }
     if (!directory) {
-        fprintf(stderr, "Error: '%s' is not a directory; specify sources explicitly.\n", source);
+        message(MESSAGE_ERROR, "Error:", " '%s' is not a directory; specify sources explicitly.",
+                source);
         free(source);
         return 1;
     }
@@ -424,7 +485,7 @@ static int unpack(int count, char **args) {
         return usage("unpack", 1);
     const char **selected = calloc((size_t)count, sizeof *selected);
     if (!selected) {
-        fprintf(stderr, "Error: cannot allocate selected paths.\n");
+        message(MESSAGE_ERROR, "Error:", " cannot allocate selected paths.");
         return 1;
     }
     const char *password = NULL;
@@ -464,7 +525,7 @@ static int unpack(int count, char **args) {
     if (operands == 1 && (!generated || !valid_destination_name(generated))) {
         free(generated);
         free(selected);
-        fprintf(stderr, "Error: cannot derive a destination; specify it explicitly.\n");
+        message(MESSAGE_ERROR, "Error:", " cannot derive a destination; specify it explicitly.");
         return 1;
     }
     const char *destination = operands == 2 ? args[i + 1] : generated;
@@ -472,7 +533,7 @@ static int unpack(int count, char **args) {
                                  selected, selected_count, password};
     ArcResult r = arc_unpack_ex(path, destination, &options);
     if (!report(r))
-        printf("Extracted to %s\n", destination);
+        message(MESSAGE_SUCCESS, "Extracted to", " %s", destination);
     free(generated);
     free(selected);
     return r.code == ARC_OK ? 0 : 1;
@@ -530,14 +591,14 @@ static int application(int argc, char **argv) {
     }
     ArcResult r = arc_verify_ex(path, &options);
     if (!report(r))
-        printf("Content readable; available integrity checks passed.\n");
+        message(MESSAGE_SUCCESS, "Content readable", "; available integrity checks passed.");
     return r.code == ARC_OK ? 0 : 1;
 }
 #ifdef _WIN32
 int wmain(int argc, wchar_t **argv) {
     char **args = calloc((size_t)argc + 1, sizeof *args);
     if (!args) {
-        fprintf(stderr, "Error: cannot allocate arguments.\n");
+        message(MESSAGE_ERROR, "Error:", " cannot allocate arguments.");
         return 1;
     }
     int status = 0;
@@ -551,7 +612,7 @@ int wmain(int argc, wchar_t **argv) {
     if (!status)
         status = application(argc, args);
     else
-        fprintf(stderr, "Error: cannot convert Unicode arguments.\n");
+        message(MESSAGE_ERROR, "Error:", " cannot convert Unicode arguments.");
     for (int i = 0; i < argc; ++i)
         free(args[i]);
     free(args);
