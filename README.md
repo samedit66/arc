@@ -13,6 +13,7 @@ of its own. That made the API easier to maintain—and gave me a tool of my own.
 
 - Usability first, features second 💅
 - Powered by the battle-tested [libarchive](https://www.libarchive.org/) 🛡️
+- Unicode and cross-platform support from the start 🌍
 - Handles most everyday archive tasks
 - Easy to embed in your application
 
