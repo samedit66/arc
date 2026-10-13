@@ -30,6 +30,11 @@ sublibrary with no libarchive dependency.
 Run the commands inside MSYS2 UCRT64 with its compiler, pkg-config and libarchive
 on PATH. `MISE_BASH_PATH` can explicitly select the MSYS2 Bash.
 
+The arc build defines `NOGDI` to exclude Windows GDI declarations: GDI's `Arc()`
+function conflicts with arc's public `Arc` type. Applications including both
+`arc.h` and Windows headers must also define `NOGDI` before the Windows headers
+are included, including indirect inclusion through libarchive headers.
+
 ## Development tools
 
 `mise run format` formats the C sources. `mise run check` builds the project,

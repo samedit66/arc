@@ -13,6 +13,10 @@ fi
 read -r -a dependency_cflags <<< "$(pkg-config --cflags libarchive)"
 read -r -a dependency_ldflags <<< "$(pkg-config --libs libarchive)"
 flags=(-std=c11 -D_FILE_OFFSET_BITS=64 -Wall -Wextra -Wpedantic -Werror)
+if [[ "$platform" == windows ]]; then
+    # libarchive headers include windows.h; GDI's Arc() conflicts with our Arc type.
+    flags+=(-DNOGDI)
+fi
 version="${ARC_VERSION:-dev}"
 if [[ ! "$version" =~ ^[A-Za-z0-9][A-Za-z0-9.+_-]*$ ]]; then
     printf 'Invalid ARC_VERSION: use letters, digits, dots, plus, underscores or hyphens\n' >&2
@@ -32,8 +36,7 @@ for source in "${sources[@]}"; do
     "$compiler" "${flags[@]}" "${dependency_cflags[@]}" -c "$source" -o "$object"
     objects+=("$object")
 done
-platform_flags=()
-if [[ "$platform" == windows ]]; then platform_flags+=(-municode); fi
+if [[ "$platform" == windows ]]; then flags+=(-municode); fi
 "$compiler" "${flags[@]}" main.c "${objects[@]}" "$build_dir/filekit/libfilekit.a" \
-    "${platform_flags[@]}" "${dependency_ldflags[@]}" -o "$build_dir/arc$exe"
+    "${dependency_ldflags[@]}" -o "$build_dir/arc$exe"
 printf 'Built %s\n' "$build_dir/arc$exe"
