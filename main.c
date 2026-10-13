@@ -380,8 +380,8 @@ static int valid_destination_name(const char *name) {
     char *dot = strchr(stem, '.');
     if (dot)
         *dot = 0;
-    int reserved = ascii_equal(stem, "con") || ascii_equal(stem, "prn") ||
-                   ascii_equal(stem, "aux") || ascii_equal(stem, "nul");
+    int reserved = !_stricmp(stem, "con") || !_stricmp(stem, "prn") || !_stricmp(stem, "aux") ||
+                   !_stricmp(stem, "nul");
     if (strlen(stem) >= 4 && (!_strnicmp(stem, "com", 3) || !_strnicmp(stem, "lpt", 3))) {
         const unsigned char *p = (const unsigned char *)stem + 3;
         reserved |= (p[0] >= '1' && p[0] <= '9' && !p[1]) ||
