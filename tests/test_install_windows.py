@@ -74,6 +74,8 @@ def test_windows_installer_passes_paths_and_selects_ucrt64(tmp_path):
     ).strip()
     assert Path(native_path) == destination
     assert "ucrt64" in result.stdout
+    quoted_binary = str(destination / "arc.exe").replace("'", "''")
+    assert f"To uninstall from PowerShell, run: Remove-Item -LiteralPath '{quoted_binary}'" in result.stdout
 
 
 def test_windows_installer_propagates_shell_failure(tmp_path):

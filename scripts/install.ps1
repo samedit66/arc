@@ -50,6 +50,9 @@ exec sh "$script" --install-dir "$destination"
     if ($LASTEXITCODE -ne 0) {
         throw "arc installation failed (exit $LASTEXITCODE)."
     }
+    # PowerShell escapes apostrophes in single-quoted strings by doubling them.
+    $binary = (Join-Path $InstallDir 'arc.exe').Replace("'", "''")
+    Write-Host "To uninstall from PowerShell, run: Remove-Item -LiteralPath '$binary'"
     # arc.exe is dynamically linked: its UCRT64 runtime DLLs remain in MSYS2.
     Write-Host "To run arc from PowerShell, add $InstallDir and $runtime to your PATH."
 }

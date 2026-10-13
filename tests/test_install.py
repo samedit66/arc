@@ -24,7 +24,7 @@ def installer(tmp_path):
     (source / "scripts").mkdir(parents=True)
     temporary = tmp_path / "temporary"
     temporary.mkdir()
-    install_dir = tmp_path / "installed with spaces"
+    install_dir = tmp_path / "installed with spaces and 'quotes'"
     write_script(tools / "brew", 'printf "/unused/libarchive\\n"\n')
     host_os = subprocess.check_output(["uname", "-s"], text=True).strip()
     write_script(tools / "uname", 'printf "%s\\n" "$TEST_OS"\n')
@@ -103,6 +103,10 @@ def test_install_from_pipe_and_update(installer):
     binary = directory / f"arc{suffix}"
     assert f"main.{COMMIT}" in binary.read_text()
     assert "PATH" in result.stdout
+    assert "To uninstall, run: rm -- '" in result.stdout
+    if os.name != "nt":
+        quoted_path = str(binary.resolve()).replace("'", "'\\''")
+        assert f"To uninstall, run: rm -- '{quoted_path}'" in result.stdout
     result = invoke("--install-dir", str(directory), commit="b" * 40)
     assert result.returncode == 0, result.stderr
     assert "main." + "b" * 40 in binary.read_text()

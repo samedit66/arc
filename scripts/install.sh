@@ -77,6 +77,9 @@ main() {
     mv -f "$staged" "$destination"
     staged=
     printf 'Installed arc main.%s at %s\n' "$commit" "$destination"
+    # Single-quote the path for a command users can paste, including apostrophes.
+    quoted_destination=$(printf '%s' "$destination" | sed "s/'/'\\\\''/g")
+    printf "To uninstall, run: rm -- '%s'\n" "$quoted_destination"
     case ":${PATH:-}:" in
         *":$install_dir:"*) ;;
         *) printf 'Add %s to your PATH to run arc.\n' "$install_dir" ;;
