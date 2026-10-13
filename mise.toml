@@ -5,11 +5,10 @@ CC = "{% if env.CC is defined and env.CC != '' %}{{ env.CC }}{% elif os() == 'ma
 AR = "{{ env.AR | default(value='ar') }}"
 ARC_PLATFORM = "{% if os() == 'windows' %}windows{% else %}unix{% endif %}"
 ARC_EXE_SUFFIX = "{% if os() == 'windows' %}.exe{% endif %}"
-ARC_CFLAGS = "-std=c11 -D_FILE_OFFSET_BITS=64 -Wall -Wextra -Wpedantic -Werror{% if os() == 'windows' %} -DNOGDI{% endif %}"
+ARC_CFLAGS = "-std=c11 -D_FILE_OFFSET_BITS=64 -Wall -Wextra -Wpedantic -Werror"
 ARC_LDFLAGS = "{% if os() == 'windows' %}-municode{% endif %}"
 ARC_SANITIZER_FLAGS = "{% if env.ARC_SANITIZE | default(value='0') == '1' %}-fsanitize=address,undefined -fno-omit-frame-pointer -g{% endif %}"
 FILEKIT_SANITIZER_FLAGS = "{% if env.ARC_SANITIZE | default(value=env.FILEKIT_SANITIZE | default(value='0')) == '1' %}-fsanitize=address,undefined -fno-omit-frame-pointer -g{% endif %}"
-# GDI's Arc() conflicts with arc's public Arc type; Windows flags exclude GDI.
 PKG_CONFIG_PATH = "{% if os() == 'macos' %}{{ exec(command='brew --prefix libarchive') }}/lib/pkgconfig{% if env.PKG_CONFIG_PATH is defined and env.PKG_CONFIG_PATH != '' %}:{{ env.PKG_CONFIG_PATH }}{% endif %}{% else %}{{ env.PKG_CONFIG_PATH | default(value='') }}{% endif %}"
 
 [tools]

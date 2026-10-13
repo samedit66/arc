@@ -7,4 +7,4 @@ if [[ "${1:-}" == --check ]]; then
 else
     flags+=(-i)
 fi
-exec clang-format "${flags[@]}" arc.h arc.c main.c internal/*.h internal/*.c filekit/*.h filekit/*.c
+exec clang-format "${flags[@]}" arc.h arc.c main.c internal/*.h internal/*.c filekit/*.h filekit/*.c tests/consumer/main.c

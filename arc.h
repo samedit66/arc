@@ -7,6 +7,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /** Output archive configuration. */
 typedef struct {
     /** Non-NULL, case-sensitive Arc format identifier. */
@@ -29,7 +33,7 @@ typedef struct {
  * between operations are allowed; relative sources use each call's cwd.
  * Concurrent process cwd changes and output/parent replacement are unsupported.
  */
-typedef struct Arc Arc;
+typedef struct ArcWriter ArcWriter;
 
 /** Exclusively owned sequential reader; input must remain unchanged. */
 typedef struct ArcReader ArcReader;
@@ -190,14 +194,14 @@ ArcResult arc_get_capabilities(const ArcOptions *options, unsigned int *operatio
  *
  * Example:
  * ```c
- * Arc *writer = NULL;
+ * ArcWriter *writer = NULL;
  * ArcResult result = arc_create("backup.tar.gz", &writer);
  * if (result.code == ARC_OK) {
  *     result = arc_close(&writer);
  * }
  * ```
  */
-ArcResult arc_create(const char *path, Arc **out);
+ArcResult arc_create(const char *path, ArcWriter **out);
 
 /**
  * Create a new archive writer with explicit configuration.
@@ -215,14 +219,14 @@ ArcResult arc_create(const char *path, Arc **out);
  * Example:
  * ```c
  * ArcOptions options = {.format = "tar", .compression = "none"};
- * Arc *writer = NULL;
+ * ArcWriter *writer = NULL;
  * ArcResult result = arc_create_ex("backup.tar", &options, &writer);
  * if (result.code == ARC_OK) {
  *     result = arc_close(&writer);
  * }
  * ```
  */
-ArcResult arc_create_ex(const char *path, const ArcOptions *options, Arc **out);
+ArcResult arc_create_ex(const char *path, const ArcOptions *options, ArcWriter **out);
 
 /**
  * Add an ordinary filesystem file, copying its data in chunks.
@@ -242,7 +246,7 @@ ArcResult arc_create_ex(const char *path, const ArcOptions *options, Arc **out);
  * ArcResult result = arc_add_file(writer, "notes.txt", "docs/notes.txt");
  * ```
  */
-ArcResult arc_add_file(Arc *writer, const char *source_path, const char *entry_path);
+ArcResult arc_add_file(ArcWriter *writer, const char *source_path, const char *entry_path);
 
 /**
  * Add a filesystem file, directory tree or symbolic link.
@@ -264,7 +268,7 @@ ArcResult arc_add_file(Arc *writer, const char *source_path, const char *entry_p
  * ArcResult result = arc_add_path(writer, "photos", "photos");
  * ```
  */
-ArcResult arc_add_path(Arc *writer, const char *source_path, const char *entry_path);
+ArcResult arc_add_path(ArcWriter *writer, const char *source_path, const char *entry_path);
 
 /**
  * Add a null-terminated text string as an ordinary file.
@@ -282,7 +286,7 @@ ArcResult arc_add_path(Arc *writer, const char *source_path, const char *entry_p
  * ArcResult result = arc_add_text(writer, "hello.txt", "Hello!");
  * ```
  */
-ArcResult arc_add_text(Arc *writer, const char *entry_path, const char *text);
+ArcResult arc_add_text(ArcWriter *writer, const char *entry_path, const char *text);
 
 /**
  * Begin an ordinary file entry for chunk-based writing.
@@ -306,7 +310,7 @@ ArcResult arc_add_text(Arc *writer, const char *entry_path, const char *text);
  * }
  * ```
  */
-ArcResult arc_begin_file(Arc *writer, const char *entry_path, uint64_t size);
+ArcResult arc_begin_file(ArcWriter *writer, const char *entry_path, uint64_t size);
 
 /**
  * Write the next chunk of the open entry.
@@ -324,7 +328,7 @@ ArcResult arc_begin_file(Arc *writer, const char *entry_path, uint64_t size);
  * ArcResult result = arc_write_chunk(writer, data, sizeof data);
  * ```
  */
-ArcResult arc_write_chunk(Arc *writer, const void *data, size_t size);
+ArcResult arc_write_chunk(ArcWriter *writer, const void *data, size_t size);
 
 /**
  * Complete the currently open entry.
@@ -339,7 +343,7 @@ ArcResult arc_write_chunk(Arc *writer, const void *data, size_t size);
  * ArcResult result = arc_end_file(writer);
  * ```
  */
-ArcResult arc_end_file(Arc *writer);
+ArcResult arc_end_file(ArcWriter *writer);
 
 /**
  * Finalize an archive and release its writer, even on failure.
@@ -352,13 +356,13 @@ ArcResult arc_end_file(Arc *writer);
  * Its code preserves the first failure; secondary cleanup diagnostics may be
  * appended within the fixed message capacity.
  *
- * Example (writer is an owned Arc * or NULL):
+ * Example (writer is an owned ArcWriter * or NULL):
  * ```c
  * ArcResult result = arc_close(&writer);
  * // writer is now NULL; check result for finalization errors.
  * ```
  */
-ArcResult arc_close(Arc **writer);
+ArcResult arc_close(ArcWriter **writer);
 
 /**
  * Release an unfinished writer and remove its output file.
@@ -370,13 +374,13 @@ ArcResult arc_close(Arc **writer);
  * for retry. Callers must report cleanup failures without hiding the original
  * operation failure. The output path must not be concurrently replaced.
  *
- * Example (writer is an owned Arc * or NULL):
+ * Example (writer is an owned ArcWriter * or NULL):
  * ```c
  * ArcResult cleanup = arc_discard(&writer);
  * // writer is now NULL; report cleanup errors alongside the original failure.
  * ```
  */
-ArcResult arc_discard(Arc **writer);
+ArcResult arc_discard(ArcWriter **writer);
 
 /**
  * Extract an archive without overwriting existing files or links.
@@ -719,5 +723,9 @@ ArcResult arc_get_size(const char *archive_path, uint64_t *bytes);
  * ```
  */
 ArcResult arc_inspect(const char *archive_path, ArcInfo *info);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

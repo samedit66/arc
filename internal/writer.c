@@ -29,7 +29,7 @@ typedef struct {
     size_t identity_root; /* Record numbers plus one; zero is absent. */
 } WriterIndex;
 
-struct Arc {
+struct ArcWriter {
     struct archive *backend;
     char *path;
     int fd, entry_open;
@@ -149,17 +149,17 @@ static WriterItem *identity_find(WriterIndex *index, FilekitIdentity identity) {
     return NULL;
 }
 
-ArcResult writer_previous_failure(const Arc *writer) {
+ArcResult writer_previous_failure(const ArcWriter *writer) {
     return writer->failure;
 }
 
-ArcResult writer_failure(Arc *w, ArcResult r) {
+ArcResult writer_failure(ArcWriter *w, ArcResult r) {
     if (w && ar_failed(r) && !ar_failed(w->failure))
         w->failure = r;
     return r;
 }
 
-static ArcResult writer_ready(Arc *w, int entry) {
+static ArcResult writer_ready(ArcWriter *w, int entry) {
     if (!w)
         return ar_result(ARC_INVALID_ARGUMENT, "Missing writer.");
     if (ar_failed(w->failure))
@@ -170,7 +170,7 @@ static ArcResult writer_ready(Arc *w, int entry) {
     return ar_okay();
 }
 
-ArcResult arc_create_impl(const char *path, const ArcOptions *options, Arc **out) {
+ArcResult arc_create_impl(const char *path, const ArcOptions *options, ArcWriter **out) {
     if (!out)
         return ar_result(ARC_INVALID_ARGUMENT, "Missing writer output.");
     *out = NULL;
@@ -182,7 +182,7 @@ ArcResult arc_create_impl(const char *path, const ArcOptions *options, Arc **out
         return r;
     if (!(caps & ARC_CAN_CREATE))
         return ar_result(ARC_UNSUPPORTED, "Archive creation is unavailable.");
-    Arc *w = calloc(1, sizeof *w);
+    ArcWriter *w = calloc(1, sizeof *w);
     if (!w)
         return ar_result(ARC_OUT_OF_MEMORY, "Cannot allocate writer.");
     w->fd = -1;
@@ -220,7 +220,7 @@ ArcResult arc_create_impl(const char *path, const ArcOptions *options, Arc **out
     return ar_okay();
 }
 
-static ArcResult start_entry(Arc *w, struct archive_entry *entry, ArcEntryType type,
+static ArcResult start_entry(ArcWriter *w, struct archive_entry *entry, ArcEntryType type,
                              FilekitInfo identity) {
     const char *name = archive_entry_pathname_utf8(entry);
     if (!name)
@@ -240,7 +240,7 @@ static ArcResult start_entry(Arc *w, struct archive_entry *entry, ArcEntryType t
     return ar_okay();
 }
 
-ArcResult arc_begin_file_impl(Arc *w, const char *path, uint64_t size) {
+ArcResult arc_begin_file_impl(ArcWriter *w, const char *path, uint64_t size) {
     ArcResult r = writer_ready(w, 0);
     if (ar_failed(r))
         return r;
@@ -266,7 +266,7 @@ ArcResult arc_begin_file_impl(Arc *w, const char *path, uint64_t size) {
     return r;
 }
 
-ArcResult arc_write_chunk_impl(Arc *w, const void *data, size_t n) {
+ArcResult arc_write_chunk_impl(ArcWriter *w, const void *data, size_t n) {
     ArcResult r = writer_ready(w, 1);
     if (ar_failed(r))
         return r;
@@ -288,7 +288,7 @@ ArcResult arc_write_chunk_impl(Arc *w, const void *data, size_t n) {
     return ar_okay();
 }
 
-ArcResult arc_end_file_impl(Arc *w) {
+ArcResult arc_end_file_impl(ArcWriter *w) {
     ArcResult r = writer_ready(w, 1);
     if (ar_failed(r))
         return r;
@@ -300,7 +300,7 @@ ArcResult arc_end_file_impl(Arc *w) {
     return ar_okay();
 }
 
-ArcResult arc_add_text_impl(Arc *w, const char *path, const char *text) {
+ArcResult arc_add_text_impl(ArcWriter *w, const char *path, const char *text) {
     if (!text)
         return writer_failure(w, ar_result(ARC_INVALID_ARGUMENT, "Missing text."));
     ArcResult r = arc_begin_file_impl(w, path, strlen(text));
@@ -311,7 +311,7 @@ ArcResult arc_add_text_impl(Arc *w, const char *path, const char *text) {
     return r;
 }
 
-static ArcResult pack_entry(Arc *w, struct archive *disk, struct archive_entry *e,
+static ArcResult pack_entry(ArcWriter *w, struct archive *disk, struct archive_entry *e,
                             const char *source, const char *stored) {
     FilekitInfo identity;
     ArcResult r = ar_from_filekit(filekit_info(source, &identity));
@@ -389,7 +389,7 @@ static ArcResult pack_entry(Arc *w, struct archive *disk, struct archive_entry *
     return writer_failure(w, r);
 }
 
-static ArcResult add_source(Arc *w, const char *source, const char *stored, int file_only) {
+static ArcResult add_source(ArcWriter *w, const char *source, const char *stored, int file_only) {
     ArcResult r = writer_ready(w, 0);
     if (ar_failed(r))
         return r;
@@ -477,18 +477,18 @@ static ArcResult add_source(Arc *w, const char *source, const char *stored, int 
     return writer_failure(w, r);
 }
 
-ArcResult arc_add_file_impl(Arc *w, const char *source, const char *name) {
+ArcResult arc_add_file_impl(ArcWriter *w, const char *source, const char *name) {
     return add_source(w, source, name, 1);
 }
 
-ArcResult arc_add_path_impl(Arc *w, const char *source, const char *name) {
+ArcResult arc_add_path_impl(ArcWriter *w, const char *source, const char *name) {
     return add_source(w, source, name, 0);
 }
 
-ArcResult release_writer(Arc **owned, int discard) {
+ArcResult release_writer(ArcWriter **owned, int discard) {
     if (!owned)
         return ar_result(ARC_INVALID_ARGUMENT, "Missing writer pointer.");
-    Arc *w = *owned;
+    ArcWriter *w = *owned;
     if (!w)
         return ar_okay();
     *owned = NULL;

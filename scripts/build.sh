@@ -32,6 +32,10 @@ for source in "${sources[@]}"; do
     "$compiler" "${flags[@]}" ${dependency_cflags[@]+"${dependency_cflags[@]}"} -c "$source" -o "$object"
     objects+=("$object")
 done
-"$compiler" "${flags[@]}" ${link_flags[@]+"${link_flags[@]}"} main.c "${objects[@]}" "$build_dir/filekit/libfilekit.a" \
+filekit_objects=("$build_dir/filekit/support.o" "$build_dir/filekit/file_system_$platform.o")
+if [[ "$platform" == windows ]]; then filekit_objects+=("$build_dir/filekit/windows_text.o"); fi
+rm -f "$build_dir/libarc.a"
+"$AR" rcs "$build_dir/libarc.a" "${objects[@]}" "${filekit_objects[@]}"
+"$compiler" "${flags[@]}" ${link_flags[@]+"${link_flags[@]}"} main.c "$build_dir/libarc.a" \
     ${dependency_ldflags[@]+"${dependency_ldflags[@]}"} -o "$build_dir/arc$exe"
 printf 'Built %s\n' "$build_dir/arc$exe"

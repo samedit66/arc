@@ -22,7 +22,7 @@ ArcResult arc_get_capabilities(const ArcOptions *o, unsigned int *out) {
     return r;
 }
 
-ArcResult arc_create(const char *path, Arc **out) {
+ArcResult arc_create(const char *path, ArcWriter **out) {
     if (!out)
         return ar_result(ARC_INVALID_ARGUMENT, "Missing writer output.");
     *out = NULL;
@@ -35,7 +35,7 @@ ArcResult arc_create(const char *path, Arc **out) {
     return arc_create_ex(path, &options, out);
 }
 
-ArcResult arc_create_ex(const char *path, const ArcOptions *o, Arc **out) {
+ArcResult arc_create_ex(const char *path, const ArcOptions *o, ArcWriter **out) {
     if (!out)
         return ar_result(ARC_INVALID_ARGUMENT, "Missing writer output.");
     *out = NULL;
@@ -43,7 +43,7 @@ ArcResult arc_create_ex(const char *path, const ArcOptions *o, Arc **out) {
     ArcResult r = locale_begin(&scope);
     if (ar_failed(r))
         return r;
-    Arc *writer = NULL;
+    ArcWriter *writer = NULL;
     r = locale_end(&scope, arc_create_impl(path, o, &writer));
     if (ar_failed(r) && writer) {
         ArcResult cleanup = release_writer(&writer, 1);
@@ -65,33 +65,33 @@ ArcResult arc_create_ex(const char *path, const ArcOptions *o, Arc **out) {
         return writer_failure(writer, locale_end(&scope, (expression)));                           \
     } while (0)
 
-ArcResult arc_begin_file(Arc *writer, const char *name, uint64_t size) {
+ArcResult arc_begin_file(ArcWriter *writer, const char *name, uint64_t size) {
     WRITER_OPERATION(arc_begin_file_impl(writer, name, size));
 }
 
-ArcResult arc_write_chunk(Arc *writer, const void *data, size_t size) {
+ArcResult arc_write_chunk(ArcWriter *writer, const void *data, size_t size) {
     WRITER_OPERATION(arc_write_chunk_impl(writer, data, size));
 }
 
-ArcResult arc_end_file(Arc *writer) {
+ArcResult arc_end_file(ArcWriter *writer) {
     WRITER_OPERATION(arc_end_file_impl(writer));
 }
 
-ArcResult arc_add_text(Arc *writer, const char *name, const char *text) {
+ArcResult arc_add_text(ArcWriter *writer, const char *name, const char *text) {
     WRITER_OPERATION(arc_add_text_impl(writer, name, text));
 }
 
-ArcResult arc_add_file(Arc *writer, const char *source, const char *name) {
+ArcResult arc_add_file(ArcWriter *writer, const char *source, const char *name) {
     WRITER_OPERATION(arc_add_file_impl(writer, source, name));
 }
 
-ArcResult arc_add_path(Arc *writer, const char *source, const char *name) {
+ArcResult arc_add_path(ArcWriter *writer, const char *source, const char *name) {
     WRITER_OPERATION(arc_add_path_impl(writer, source, name));
 }
 
 #undef WRITER_OPERATION
 
-static ArcResult close_with_locale(Arc **writer, int discard) {
+static ArcResult close_with_locale(ArcWriter **writer, int discard) {
     if (!writer || !*writer)
         return release_writer(writer, discard);
     ArcResult previous = discard ? ar_okay() : writer_previous_failure(*writer);
@@ -105,11 +105,11 @@ static ArcResult close_with_locale(Arc **writer, int discard) {
     return locale_end(&scope, release_writer(writer, discard));
 }
 
-ArcResult arc_close(Arc **writer) {
+ArcResult arc_close(ArcWriter **writer) {
     return close_with_locale(writer, 0);
 }
 
-ArcResult arc_discard(Arc **writer) {
+ArcResult arc_discard(ArcWriter **writer) {
     return close_with_locale(writer, 1);
 }
 

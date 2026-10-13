@@ -8,16 +8,16 @@ ArcResult arc_get_capabilities_impl(const ArcOptions *options, unsigned *out);
  *
  * - `writer`: Writer whose retained failure is returned.
  */
-ArcResult writer_previous_failure(const Arc *writer);
-ArcResult writer_failure(Arc *writer, ArcResult r);
-ArcResult release_writer(Arc **writer, int discard);
-ArcResult arc_create_impl(const char *path, const ArcOptions *options, Arc **out);
-ArcResult arc_begin_file_impl(Arc *writer, const char *path, uint64_t size);
-ArcResult arc_write_chunk_impl(Arc *writer, const void *data, size_t size);
-ArcResult arc_end_file_impl(Arc *writer);
-ArcResult arc_add_text_impl(Arc *writer, const char *path, const char *text);
-ArcResult arc_add_file_impl(Arc *writer, const char *source, const char *name);
-ArcResult arc_add_path_impl(Arc *writer, const char *source, const char *name);
+ArcResult writer_previous_failure(const ArcWriter *writer);
+ArcResult writer_failure(ArcWriter *writer, ArcResult r);
+ArcResult release_writer(ArcWriter **writer, int discard);
+ArcResult arc_create_impl(const char *path, const ArcOptions *options, ArcWriter **out);
+ArcResult arc_begin_file_impl(ArcWriter *writer, const char *path, uint64_t size);
+ArcResult arc_write_chunk_impl(ArcWriter *writer, const void *data, size_t size);
+ArcResult arc_end_file_impl(ArcWriter *writer);
+ArcResult arc_add_text_impl(ArcWriter *writer, const char *path, const char *text);
+ArcResult arc_add_file_impl(ArcWriter *writer, const char *source, const char *name);
+ArcResult arc_add_path_impl(ArcWriter *writer, const char *source, const char *name);
 ArcResult arc_list_impl(const char *path, const ArcReadOptions *options, ArcVisitor visitor,
                         void *context);
 ArcResult arc_get_size_impl(const char *path, uint64_t *out);

@@ -223,7 +223,7 @@ static int pack_sources(const char *output, const ArcOptions *options, int keep_
         return 1;
     if (keep_root && (sources != 1 || !first_directory))
         return usage("pack", 1);
-    Arc *writer = NULL;
+    ArcWriter *writer = NULL;
     ArcResult r = arc_create_ex(output, options, &writer);
     if (report(r))
         return 1;
