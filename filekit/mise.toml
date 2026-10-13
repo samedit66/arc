@@ -1,0 +1,10 @@
+[tasks.build]
+shell = "bash -euo pipefail -c"
+run = "bash build.sh"
+dir = "{{config_root}}"
+
+[tasks.verify]
+depends = ["build"]
+shell = "bash -euo pipefail -c"
+run = "python verify.py"
+dir = "{{config_root}}"

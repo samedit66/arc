@@ -1,0 +1,7 @@
+tests/.venv/
+__pycache__/
+.pytest_cache/
+*.o
+*.a
+/arc
+/arc.exe

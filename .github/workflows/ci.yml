@@ -1,0 +1,71 @@
+name: Archive checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            shell: bash
+          - os: macos-latest
+            shell: bash
+          - os: windows-latest
+            shell: msys2 {0}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc clang libarchive-dev pkg-config python3
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew install libarchive pkgconf llvm
+          printf '%s/bin\n' "$(brew --prefix llvm)" >> "$GITHUB_PATH"
+      - name: Install Windows UCRT64 dependencies
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          path-type: inherit
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-libarchive
+            mingw-w64-ucrt-x86_64-pkgconf
+      - name: Select MSYS2 Bash for mise tasks
+        if: runner.os == 'Windows'
+        run: printf 'MISE_BASH_PATH=%s\n' "$(cygpath -m /usr/bin/bash)" >> "$GITHUB_ENV"
+      - name: Install mise and pinned Python/uv
+        uses: jdx/mise-action@v4
+        with:
+          version: 2026.9.1
+      - name: Formatting (canonical macOS LLVM toolchain)
+        if: runner.os == 'macOS'
+        run: mise run format-check
+      - name: Build and regression checks
+        run: mise run test
+      - name: Independent filekit checks
+        run: mise run filekit:verify
+      - name: Address and undefined-behavior sanitizers
+        if: runner.os != 'Windows'
+        env:
+          CC: clang
+          ARC_SANITIZE: '1'
+          ARC_BUILD_DIR: ${{ runner.temp }}/arc-sanitize
+        run: mise run test

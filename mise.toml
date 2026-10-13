@@ -1,0 +1,59 @@
+[tools]
+python = "3.13.15"
+uv = "0.12.24"
+
+[tasks.build]
+description = "Build arc outside the source tree"
+shell = "bash -euo pipefail -c"
+run = "bash scripts/build.sh"
+dir = "{{config_root}}"
+
+[tasks.test]
+description = "Build arc, then run isolated black-box CLI tests"
+depends = ["build"]
+shell = "bash -euo pipefail -c"
+run = "bash scripts/test.sh"
+dir = "{{config_root}}"
+
+[tasks.verify]
+description = "Alias for the black-box test suite"
+depends = ["test"]
+
+[tasks.check]
+description = "Build and test arc, then check C formatting"
+depends = ["test"]
+shell = "bash -euo pipefail -c"
+run = "bash scripts/format.sh --check"
+dir = "{{config_root}}"
+
+[tasks.format]
+description = "Format C sources"
+shell = "bash -euo pipefail -c"
+run = "bash scripts/format.sh"
+dir = "{{config_root}}"
+
+[tasks."format-check"]
+description = "Check C formatting"
+shell = "bash -euo pipefail -c"
+run = "bash scripts/format.sh --check"
+dir = "{{config_root}}"
+
+[tasks.run]
+description = "Build and run arc with forwarded arguments"
+depends = ["build"]
+shell = "bash -euo pipefail -c"
+run = "bash scripts/run.sh"
+dir = "{{config_root}}"
+
+[tasks."filekit:build"]
+description = "Build filekit independently"
+shell = "bash -euo pipefail -c"
+run = "bash filekit/build.sh"
+dir = "{{config_root}}"
+
+[tasks."filekit:verify"]
+description = "Run filekit's independent API and build checks"
+depends = ["filekit:build"]
+shell = "bash -euo pipefail -c"
+run = "python filekit/verify.py"
+dir = "{{config_root}}"
