@@ -143,7 +143,11 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/vcpkg-cache
-          key: static-${{ matrix.target }}-${{ hashFiles('release/vcpkg.json', 'release/triplets/**') }}
+          # Actions caches are immutable. Restore the latest snapshot, then save
+          # newly built ABI variants even when dependencies have not changed.
+          key: static-v2-${{ matrix.target }}-${{ hashFiles('release/vcpkg.json', 'release/triplets/**', 'mise.toml', 'scripts/build-release.sh') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            static-v2-${{ matrix.target }}-${{ hashFiles('release/vcpkg.json', 'release/triplets/**', 'mise.toml', 'scripts/build-release.sh') }}-
       - name: Prepare binary cache
         run: |
           release_temp=$RUNNER_TEMP
