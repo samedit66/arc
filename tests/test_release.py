@@ -28,9 +28,14 @@ def release_repo(tmp_path):
 
 
 def validate(repo, tag, commit):
+    # Windows command-line parsing can discard a newline in an unquoted
+    # argument. Keep the test input intact through the environment boundary.
     return subprocess.run(
-        [os.environ.get("MISE_BASH_PATH", "bash"), VALIDATOR.as_posix(), tag, commit],
+        [os.environ.get("MISE_BASH_PATH", "bash"), "-c",
+         'exec "$BASH" "$1" "$ARC_TEST_RELEASE_TAG" "$2"',
+         "release-test", VALIDATOR.as_posix(), commit],
         cwd=repo, text=True, capture_output=True,
+        env={**os.environ, "ARC_TEST_RELEASE_TAG": tag},
     )
 
 
