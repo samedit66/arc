@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import subprocess
 
 import pytest
@@ -28,7 +29,7 @@ def release_repo(tmp_path):
 
 def validate(repo, tag, commit):
     return subprocess.run(
-        ["bash", VALIDATOR.as_posix(), tag, commit],
+        [os.environ.get("MISE_BASH_PATH", "bash"), VALIDATOR.as_posix(), tag, commit],
         cwd=repo, text=True, capture_output=True,
     )
 
