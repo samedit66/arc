@@ -25,6 +25,8 @@ arc pack project.zip ./src ./README.md # pack your files
 arc unpack project.zip                 # unpack into ./project
 ```
 
+Because “unpack” shouldn’t require remembering whether it’s `tar -xzf`, `-xjf`, or a keyboard smash.
+
 ## Installation
 
 Installs the latest stable release. Before the first release, select `main` explicitly
