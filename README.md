@@ -2,26 +2,28 @@
 
 # Ꭿrc
 
-Archives, made simple.
-
-A human-centered C11 library and CLI for everyday archive tasks.
+A human-centered 🥰 C11 library and CLI for everyday archive tasks.
 
 </div>
 
-I originally built it as a backend for another library, then gave it a project
-of its own. That made the API easier to maintain—and gave me a tool of my own.
+`arc` has two goals:
 
-I don’t plan to maintain arc regularly. As long as it does what I need, I’m happy
-to leave it as it is. Bug fixes are welcome.
+- Provide a library that’s easy to use and easy to wrap (the initial goal)
+- Replace `tar`, `zip` and other archive tools in my day-to-day work for good
+
+I originally built it as a backend for another library, then gave it a project of its own.
+
+**I don’t plan to maintain arc regularly**.
+As long as it does what I need, I’m happy to leave it as it is. Bug fixes are always welcome.
 
 ## Highlights
 
 - Usability first, features second 💅
 - Powered by the battle-tested [libarchive](https://www.libarchive.org/) 🛡️
 - Unicode and cross-platform support from the start 🌍
-- Handles most everyday archive tasks
-- Easy to embed in your application
-- Respects [NO_COLOR](https://no-color.org/) environment variable
+- Handles most everyday archive tasks &#128194;
+- Easy to embed in your application 😋
+- Respects the [NO_COLOR](https://no-color.org/) environment variable ✅
 
 ## In a hurry?
 
@@ -30,11 +32,11 @@ arc pack project.zip ./src ./README.md # pack your files
 arc unpack project.zip                 # unpack into ./project
 ```
 
-Because “unpack” shouldn’t require remembering whether it’s `tar -xzf`, `-xjf`, or a keyboard smash.
+Because "unpack" shouldn’t require remembering whether it’s `tar -xzf`, `-xjf`, or a keyboard smash.
 
 ## Installation
 
-Installs the latest stable release binary. For a development source build,
+The commands below install the latest stable release binary. For a development source build,
 select `main` explicitly with `--version main` (shell) or `-Version main` (PowerShell).
 
 macOS / Linux:
@@ -57,17 +59,17 @@ see the [installation guide](docs/install.md).
 Start with the everyday stuff:
 
 ```sh
-arc unpack project.zip ./restored      # choose a destination
+arc unpack project.zip ./restored  # choose a destination
 
-arc list project.zip   # see what’s inside
-arc list --tree project.zip # see the directory structure
-arc unpack --strip-root project.zip ./flat # remove one common root directory
-arc info project.zip   # see sizes and entry counts
-arc verify project.zip # check content integrity where supported
+arc list project.zip         # see what’s inside
+arc list --tree project.zip  # see the directory structure
+arc unpack --strip-root project.zip ./flat  # remove one common root directory
+arc info project.zip         # see sizes and entry counts
+arc verify project.zip       # check content integrity where supported
 ```
 
 The output suffix chooses the format when packing; unpacking detects it from
-the contents. Existing files and links are never overwritten.
+the contents. **Existing files and links are never overwritten**.
 
 See the [tutorial](docs/tutorial.md) for passwords, selective extraction,
 root-directory options and more examples. Run `arc --help` or
@@ -146,7 +148,7 @@ mise run check
 
 The [test guide](tests/README.md) covers focused runs, fixtures and sanitizers.
 Filesystem operations live in the internal [fs module](docs/design.md), a C11
-module tested by the common suite and no libarchive dependency.
+module with no libarchive dependency. It’s tested as part of the common suite.
 
 The [design document](docs/design.md) describes the current architecture and contracts.
 
