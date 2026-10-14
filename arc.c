@@ -152,10 +152,12 @@ ArcResult arc_inspect_ex(const char *path, const ArcReadOptions *options, ArcInf
     return r;
 }
 
-ArcResult arc_unpack(const char *path, const char *root, const ArcUnpackOptions *o) {
-    if (!o)
-        return ar_result(ARC_INVALID_ARGUMENT, "Missing extraction options.");
-    ArcExtractOptions options = {o->destination_mode, NULL, 0, o->password};
+int arc_ok(ArcResult result) {
+    return result.code == ARC_OK;
+}
+
+ArcResult arc_unpack(const char *path, const char *root) {
+    ArcExtractOptions options = {.destination_mode = ARC_DESTINATION_NEW};
     return arc_unpack_ex(path, root, &options);
 }
 

@@ -8,7 +8,7 @@
 #include <stdio.h>
 
 ArcResult ar_result(ArcCode code, const char *format, ...) {
-    ArcResult r = {code, {0}};
+    ArcResult r = {.code = code};
     if (format) {
         va_list args;
         va_start(args, format);
@@ -65,12 +65,31 @@ int ar_valid_utf8(const char *s) {
     return s && fk_valid_utf8(s);
 }
 
+ArcResult ar_diagnostic(ArcResult result, ArcReason reason, const char *path) {
+    result.reason = reason;
+    if (path) {
+        size_t length = strlen(path);
+        result.path_truncated = length >= sizeof result.path;
+        size_t n = result.path_truncated ? sizeof result.path - 1 : length;
+        /* Do not cut a UTF-8 character in half. */
+        if (result.path_truncated)
+            while (n && ((unsigned char)path[n] & 0xc0) == 0x80)
+                --n;
+        memcpy(result.path, path, n);
+        result.path[n] = 0;
+    }
+    return result;
+}
+
 ArcResult ar_cleanup(ArcResult primary, ArcResult cleanup) {
     if (!ar_failed(cleanup))
         return primary;
     if (!ar_failed(primary))
         return cleanup;
-    return ar_result(primary.code, "%.170s; cleanup: %.70s", primary.message, cleanup.message);
+    if (!*primary.cleanup_message)
+        snprintf(primary.cleanup_message, sizeof primary.cleanup_message, "%s", cleanup.message);
+    primary.partial_output |= cleanup.partial_output;
+    return primary;
 }
 
 ArcResult ar_from_filekit(FilekitResult result) {
@@ -103,7 +122,7 @@ ArcResult ar_from_filekit(FilekitResult result) {
     default:
         return ar_result(ARC_IO_ERROR, "Unknown filekit error.");
     }
-    ArcResult out = {code, {0}};
+    ArcResult out = {.code = code};
     memcpy(out.message, result.message, sizeof out.message);
     out.message[sizeof out.message - 1] = '\0';
     return out;

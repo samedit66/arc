@@ -16,7 +16,8 @@ ArcResult entry_name(const char *input, char **out) {
     while (input[0] == '.' && input[1] == '/')
         input += 2;
     if (!*input || *input == '/')
-        return ar_result(ARC_INVALID_PATH, "Entry path must be relative.");
+        return ar_diagnostic(ar_result(ARC_INVALID_PATH, "Entry path must be relative."),
+                             ARC_REASON_UNSAFE_PATH, input);
     char *name = NULL;
     ArcResult r = ar_copy_string(input, &name);
     if (ar_failed(r))
@@ -42,7 +43,8 @@ ArcResult entry_name(const char *input, char **out) {
     return ar_okay();
 invalid:
     free(name);
-    return ar_result(ARC_INVALID_PATH, "Unsafe or invalid entry '%s'.", input);
+    return ar_diagnostic(ar_result(ARC_INVALID_PATH, "Unsafe or invalid archive path."),
+                         ARC_REASON_UNSAFE_PATH, input);
 }
 
 ArcResult entry_paths_conflict(const char *a, ArcEntryType a_type, const char *b,
@@ -166,7 +168,8 @@ ArcResult archive_paths_insert(ArchivePathIndex *index, const char *name, ArcEnt
     if (ar_failed(r))
         return r;
     if (found)
-        return ar_result(ARC_ALREADY_EXISTS, "Conflicting entry '%s'.", name);
+        return ar_diagnostic(ar_result(ARC_ALREADY_EXISTS, "Conflicting archive entries."),
+                             ARC_REASON_ARCHIVE_CONFLICT, name);
     char *prefix = NULL;
     r = ar_copy_string(name, &prefix);
     if (ar_failed(r))
@@ -178,7 +181,8 @@ ArcResult archive_paths_insert(ArchivePathIndex *index, const char *name, ArcEnt
         r = path_lookup(index, prefix, 0, &found);
         *p = '/';
         if (!ar_failed(r) && found && found->type != ARC_ENTRY_DIRECTORY)
-            r = ar_result(ARC_ALREADY_EXISTS, "Conflicting entry '%s'.", name);
+            r = ar_diagnostic(ar_result(ARC_ALREADY_EXISTS, "Conflicting archive entries."),
+                              ARC_REASON_ARCHIVE_CONFLICT, name);
     }
     free(prefix);
     if (!ar_failed(r) && type != ARC_ENTRY_DIRECTORY) {
@@ -202,7 +206,8 @@ ArcResult archive_paths_insert(ArchivePathIndex *index, const char *name, ArcEnt
         if (!ar_failed(r) && found)
             r = platform_compare_names(name, found->name, 1, &conflict);
         if (!ar_failed(r) && conflict)
-            r = ar_result(ARC_ALREADY_EXISTS, "Conflicting entry '%s'.", name);
+            r = ar_diagnostic(ar_result(ARC_ALREADY_EXISTS, "Conflicting archive entries."),
+                              ARC_REASON_ARCHIVE_CONFLICT, name);
         free(descendants);
     }
     if (ar_failed(r))

@@ -82,7 +82,7 @@ required. Output defaults to `build/release/<target>/{arc,deps,vcpkg,assets}`.
 `ARC_RELEASE_BUILD_DIR` overrides the target-specific root; do not share it
 between toolchains or targets. `RELEASE_TARGET` selects a native CI target.
 
-Distributions include the executable, README, Arc license, dependency/runtime
+Distributions include the executable, README, arc license, dependency/runtime
 notices, `VERSION` and `BUILD_INFO` (version, target, dependency triplet).
 Dependency versions and the vcpkg checkout are pinned by the existing
 `release/vcpkg.json` baseline. The system-library `release` preset is available
@@ -257,3 +257,11 @@ consumers exercise both header orders with GDI enabled.
 runs the CLI tests and checks C formatting; both formatting tasks require
 clang-format. See [the test guide](../tests/README.md) for focused runs,
 sanitizers and independent filekit checks.
+
+## Migrating the everyday API
+
+Rebuild consumers together with the updated library: `ArcResult` has grown and
+`arc_unpack` now takes only archive and destination. Use `arc_unpack_ex` with
+`ArcExtractOptions` for merge mode, passwords, selection or root stripping;
+`ArcUnpackOptions` has been removed. `arc_pack` and `arc_pack_ex` own the complete
+writer lifecycle. See [the tutorial](tutorial.md#use-it-from-c).

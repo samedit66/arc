@@ -28,7 +28,8 @@ def test_help(arc, command):
 def test_invalid_arguments(arc, arguments):
     result = arc(*arguments, success=False)
     assert result.returncode == 2
-    assert "Usage:" in result.stderr
+    assert "--help for usage." in result.stderr
+    assert not result.stdout
 
 
 def test_dash_prefixed_paths(arc, tmp_path):

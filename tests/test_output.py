@@ -21,8 +21,8 @@ def test_redirected_messages_are_plain(arc, simple_tar, no_color):
     for result in (packed, unpacked, verified, failed, usage):
         assert "\x1b" not in result.stdout + result.stderr
         assert not any(marker in result.stdout + result.stderr for marker in ("✅", "❌", "⚠"))
-    assert failed.stderr.startswith("Error:")
-    assert usage.stderr.startswith("Error: invalid arguments for pack.\nUsage:")
+    assert failed.stderr.startswith('Cannot verify "missing.tar"\n\n')
+    assert usage.stderr.startswith("Error: Missing archive path\n")
 
 
 def terminal_run(binary, arguments, cwd, *, stream="stdout", no_color=None, term="xterm-256color", utf8=True):
@@ -79,8 +79,11 @@ def test_terminal_messages(arc_binary, simple_tar, tmp_path, no_color, failure):
     if no_color:
         assert "\x1b" not in output
     else:
-        assert ("\x1b[31mError:\x1b[0m" if failure else "\x1b[32mContent readable\x1b[0m") in output
-    assert output.count("\n") == 1
+        assert ("\x1b[31mCannot verify\x1b[0m" if failure else "\x1b[32mContent readable\x1b[0m") in output
+    if failure:
+        assert output.count("\n") >= 3
+    else:
+        assert output.count("\n") == 1
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX pseudoterminal test")
@@ -122,7 +125,7 @@ def test_terminal_usage_error_keeps_help_plain(arc_binary, tmp_path):
     result, output = terminal_run(arc_binary, ["pack"], tmp_path, stream="stderr")
     assert result.returncode == 2
     assert result.stdout == b""
-    assert output.startswith("❌ \x1b[31mError:\x1b[0m invalid arguments for pack.\nUsage:")
+    assert output.startswith("❌ \x1b[31mError:\x1b[0m Missing archive path\n")
     assert output.count("\x1b") == 2
 
 
@@ -157,3 +160,13 @@ def test_stdout_flush_failure_is_reported(arc_binary, simple_tar, tmp_path, comm
                                 stderr=subprocess.PIPE, preexec_fn=limit_output, timeout=30)
     assert result.returncode == 1, result.stderr
     assert b"cannot write standard output" in result.stderr
+
+
+@pytest.mark.parametrize("paths", [("value", "value"), ("value", "value/child")])
+def test_archive_conflicts_do_not_suggest_another_destination(arc, make_tar, paths):
+    from support import file_entry
+
+    archive = make_tar([file_entry(path) for path in paths])
+    result = arc("unpack", archive, "output", success=False)
+    assert "Conflicting archive entries:" in result.stderr
+    assert "Choose another destination" not in result.stderr

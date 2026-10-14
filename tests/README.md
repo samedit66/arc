@@ -102,3 +102,11 @@ Windows-only tests skip on Unix with named reasons. Tests needing symlinks
 probe host permission first; on an unprivileged Windows host they skip with
 the actual OS error. An unexpected refusal on Unix remains a failure. The RAR
 extraction test explicitly checks Windows's documented symlink limitation.
+
+Whole-operation API checks cover pack cleanup, new-destination extraction,
+structured collision diagnostics and truncated paths. `api_formats.c` writes
+multiple chunks through begin/write/end for every available creation format.
+`api_cleanup.c` injects finalization/removal failures to check ownership, rollback
+and preservation of both diagnostics. `test_strip_root.py` checks preflight rejection, original-path selection, link
+transformation and collision safety. `test_tree.py` checks implicit parents,
+ordering, repeated records and escaped display names.

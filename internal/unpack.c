@@ -195,7 +195,9 @@ static ArcResult directory(ExtractIndex *index, const char *root, const char *na
         ExtractItem *p = NULL;
         r = find_item(index, prefix, &p);
         if (!ar_failed(r) && p && p->type != ARC_ENTRY_DIRECTORY)
-            r = ar_result(ARC_INVALID_PATH, "Entry is not a directory: '%s'.", prefix);
+            r = ar_diagnostic(
+                ar_result(ARC_ALREADY_EXISTS, "An archive entry is used as a directory."),
+                ARC_REASON_ARCHIVE_CONFLICT, prefix);
         if (!ar_failed(r) && !p) {
             char *full = NULL;
             FilekitInfo before = {0};
@@ -213,6 +215,8 @@ static ArcResult directory(ExtractIndex *index, const char *root, const char *na
                 r = append_item(index, prefix, ARC_ENTRY_DIRECTORY, &p);
             if (!ar_failed(r))
                 p->created = created;
+            else
+                r.partial_output |= created;
             free(full);
         }
         *end = saved;
@@ -296,6 +300,8 @@ static ArcResult hard_links(ExtractIndex *index, const char *root, int selective
                     r = ar_join(root, p->target, &source);
                 if (!ar_failed(r))
                     r = ar_from_filekit(filekit_create_hard_link(source, full));
+                if (r.code == ARC_ALREADY_EXISTS)
+                    r = ar_diagnostic(r, ARC_REASON_ENTRY_EXISTS, full);
                 if (!ar_failed(r))
                     p->created = 1;
                 free(full);
@@ -482,11 +488,14 @@ static ArcResult extract_entry(ExtractIndex *index, const char *root, struct arc
             r = ar_result(ARC_INVALID_ARCHIVE, "Conflicting directory metadata '%s'.", name);
     } else if (!ar_failed(r)) {
         FilekitInfo before = {0};
-        r = ar_from_filekit(filekit_info(full, &before));
-        if (!ar_failed(r) && before.exists)
-            r = ar_result(ARC_ALREADY_EXISTS, "Destination exists: '%s'.", full);
+        /* Classify conflicts within the archive before inspecting disk objects. */
+        r = append_item(index, name, type, &p);
         if (!ar_failed(r))
-            r = append_item(index, name, type, &p);
+            r = ar_from_filekit(filekit_info(full, &before));
+        if (!ar_failed(r) && before.exists)
+            r = ar_diagnostic(
+                ar_result(ARC_ALREADY_EXISTS, "An entry already exists at the destination."),
+                ARC_REASON_ENTRY_EXISTS, full);
     }
     if (!ar_failed(r) && !p->metadata) {
         p->metadata = archive_entry_clone(e);
@@ -510,6 +519,8 @@ static ArcResult extract_entry(ExtractIndex *index, const char *root, struct arc
         int fd = -1;
         r = ar_from_filekit(
             filekit_create_file_exclusive(full, (unsigned)archive_entry_perm(e) & 0777, &fd));
+        if (r.code == ARC_ALREADY_EXISTS)
+            r = ar_diagnostic(r, ARC_REASON_ENTRY_EXISTS, full);
         if (!ar_failed(r)) {
             p->created = 1;
             unsigned char buffer[65536];
@@ -541,6 +552,89 @@ static ArcResult extract_entry(ExtractIndex *index, const char *root, struct arc
     return r;
 }
 
+/* Preflight all names, not only selected entries: stripping has one stable root. */
+static ArcResult strip_root_name(const char *path, const char *password, char **out) {
+    struct archive *a = NULL;
+    ArcResult r = reader_open(path, password, &a);
+    char *common = NULL;
+    while (!ar_failed(r)) {
+        struct archive_entry *e = NULL;
+        int end;
+        r = read_header(a, &e, &end);
+        if (ar_failed(r) || end)
+            break;
+        char *raw = NULL, *name = NULL;
+        r = entry_text(e, 0, &raw);
+        int omitted = !ar_failed(r) && entry_type(e) == ARC_ENTRY_DIRECTORY &&
+                      (!strcmp(raw, ".") || !strcmp(raw, "./"));
+        if (!ar_failed(r) && !omitted)
+            r = entry_name(raw, &name);
+        if (!ar_failed(r) && name) {
+            char *slash = strchr(name, '/');
+            if (!slash && entry_type(e) != ARC_ENTRY_DIRECTORY)
+                r = ar_diagnostic(
+                    ar_result(ARC_INVALID_ARCHIVE, "Root-level entries cannot be stripped."),
+                    ARC_REASON_STRIP_ROOT, NULL);
+            if (slash)
+                *slash = 0;
+            if (!ar_failed(r) && common && strcmp(common, name))
+                r = ar_diagnostic(
+                    ar_result(ARC_INVALID_ARCHIVE, "Archive has more than one root directory."),
+                    ARC_REASON_STRIP_ROOT, NULL);
+            if (!ar_failed(r) && !common)
+                r = ar_copy_string(name, &common);
+        }
+        free(raw);
+        free(name);
+        if (!ar_failed(r) && archive_read_data_skip(a) != ARCHIVE_OK)
+            r = backend_error(a, ARC_INVALID_ARCHIVE);
+    }
+    r = reader_release(a, r);
+    if (!ar_failed(r) && !common)
+        r = ar_diagnostic(ar_result(ARC_INVALID_ARCHIVE, "Archive has no root directory to strip."),
+                          ARC_REASON_STRIP_ROOT, NULL);
+    if (ar_failed(r)) {
+        free(common);
+    } else
+        *out = common;
+    return r;
+}
+
+static ArcResult strip_entry(struct archive_entry *e, const char *common, int *omit) {
+    char *raw = NULL, *name = NULL;
+    ArcResult r = entry_text(e, 0, &raw);
+    *omit = !ar_failed(r) && entry_type(e) == ARC_ENTRY_DIRECTORY &&
+            (!strcmp(raw, ".") || !strcmp(raw, "./"));
+    if (!ar_failed(r) && !*omit)
+        r = entry_name(raw, &name);
+    size_t n = strlen(common);
+    if (!ar_failed(r) && name) {
+        if (!strcmp(name, common) && entry_type(e) == ARC_ENTRY_DIRECTORY)
+            *omit = 1;
+        else if (strncmp(name, common, n) || name[n] != '/')
+            r = ar_result(ARC_INVALID_ARCHIVE, "Archive root changed after preflight.");
+        else
+            archive_entry_set_pathname_utf8(e, name + n + 1);
+    }
+    free(raw);
+    free(name);
+    if (!ar_failed(r) && !*omit && entry_type(e) == ARC_ENTRY_HARD_LINK) {
+        raw = name = NULL;
+        r = entry_text(e, 2, &raw);
+        if (!ar_failed(r))
+            r = entry_name(raw, &name);
+        if (!ar_failed(r)) {
+            if (strncmp(name, common, n) || name[n] != '/')
+                r = ar_result(ARC_INVALID_PATH, "Hard link leaves the stripped root.");
+            else
+                archive_entry_set_hardlink_utf8(e, name + n + 1);
+        }
+        free(raw);
+        free(name);
+    }
+    return r;
+}
+
 ArcResult arc_unpack_impl(const char *path, const char *root, const ArcExtractOptions *options) {
     if (!root || !*root || !options ||
         (options->destination_mode != ARC_DESTINATION_NEW &&
@@ -548,23 +642,28 @@ ArcResult arc_unpack_impl(const char *path, const char *root, const ArcExtractOp
         return ar_result(ARC_INVALID_ARGUMENT, "Missing or invalid extraction options.");
     Selection selection = {0};
     ArcResult r = prepare_selection(options, &selection);
+    char *common = NULL;
+    if (!ar_failed(r) && options->strip_root)
+        r = strip_root_name(path, options->password, &common);
     struct archive *a = NULL;
     if (!ar_failed(r))
         r = reader_open(path, options->password, &a);
     if (ar_failed(r)) {
         free_selection(&selection);
+        free(common);
         return r;
     }
+    int root_created = 0;
     r = safe_root(root);
     if (!ar_failed(r)) {
-        if (options->destination_mode == ARC_DESTINATION_NEW)
+        FilekitInfo info = {0};
+        r = ar_from_filekit(filekit_info(root, &info));
+        if (!ar_failed(r) && (options->destination_mode == ARC_DESTINATION_NEW || !info.exists)) {
             r = ar_from_filekit(filekit_create_directory_exclusive(root, 0777));
-        else {
-            FilekitInfo info;
-            r = ar_from_filekit(filekit_info(root, &info));
-            if (!ar_failed(r) && !info.exists)
-                r = ar_from_filekit(filekit_create_directory_exclusive(root, 0777));
+            root_created = !ar_failed(r);
         }
+        if (r.code == ARC_ALREADY_EXISTS)
+            r = ar_diagnostic(r, ARC_REASON_DESTINATION_EXISTS, root);
     }
     if (!ar_failed(r))
         r = actual_directory(root);
@@ -585,7 +684,10 @@ ArcResult arc_unpack_impl(const char *path, const char *root, const ArcExtractOp
         }
         if (!ar_failed(r) && selected)
             r = normalized_entry(a, e);
-        if (!ar_failed(r) && selected)
+        int omit = 0;
+        if (!ar_failed(r) && selected && common)
+            r = strip_entry(e, common, &omit);
+        if (!ar_failed(r) && selected && !omit)
             r = extract_entry(&index, root, a, e);
         if (!ar_failed(r) && archive_read_data_skip(a) != ARCHIVE_OK)
             r = backend_error(a, ARC_INVALID_ARCHIVE);
@@ -612,6 +714,10 @@ ArcResult arc_unpack_impl(const char *path, const char *root, const ArcExtractOp
                 : p->link_kind == AE_SYMLINK_TYPE_DIRECTORY ? FILEKIT_LINK_DIRECTORY
                 : p->link_kind == AE_SYMLINK_TYPE_FILE      ? FILEKIT_LINK_FILE
                                                             : FILEKIT_LINK_UNKNOWN));
+        if (r.code == ARC_ALREADY_EXISTS)
+            r = ar_diagnostic(r, ARC_REASON_ENTRY_EXISTS, full);
+        if (!ar_failed(r))
+            p->created = 1;
         free(full);
     }
     /* Children were indexed after parents; finalize new directories in reverse. */
@@ -625,9 +731,13 @@ ArcResult arc_unpack_impl(const char *path, const char *root, const ArcExtractOp
             r = apply_entry_metadata(full, p->metadata, 1);
         free(full);
     }
+    if (ar_failed(r)) {
+        r.partial_output |= root_created;
+        for (size_t i = 0; i < index.count; ++i)
+            r.partial_output |= index.items[i].created;
+    }
     free_index(&index);
     free_selection(&selection);
-    if (ar_failed(r))
-        return ar_result(r.code, "%.185s; extraction may be partial.", r.message);
+    free(common);
     return r;
 }

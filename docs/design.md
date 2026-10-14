@@ -1,4 +1,4 @@
-# Arc Library Design
+# arc Library Design
 
 Status: Current architecture and contracts  
 Language: C11  
@@ -11,21 +11,22 @@ and the [tutorial](tutorial.md).
 
 ## 1. Purpose
 
-Arc is a small, human-oriented C API for creating, inspecting and extracting archives. Its vocabulary describes user actions: create an archive, add a file or text, write a chunk, close, inspect and unpack. Callers do not need to understand backend handles, entry objects, format codes or initialization sequences.
+arc is a small, human-oriented C API for creating, inspecting and extracting archives. Its vocabulary describes user actions: create an archive, add a file or text, write a chunk, close, inspect and unpack. Callers do not need to understand backend handles, entry objects, format codes or initialization sequences.
 
-The implementation uses [libarchive](https://github.com/libarchive/libarchive). The interface is defined by Arc's own semantics, not by a renamed copy of the libarchive API. Another backend may implement the same interface while advertising a different set of supported operations and formats.
+The implementation uses [libarchive](https://github.com/libarchive/libarchive). The interface is defined by arc's own semantics, not by a renamed copy of the libarchive API. Another backend may implement the same interface while advertising a different set of supported operations and formats.
 
-All failures controlled by Arc are values. Its own code does not use exceptions, `longjmp`, process termination or assertions as an error-handling mechanism. Returned backend failures are converted to ArcResult. Fatal termination inside libarchive itself, including some out-of-memory paths, is not intercepted; this is an explicitly accepted backend limitation.
+All failures controlled by arc are values. Its own code does not use exceptions, `longjmp`, process termination or assertions as an error-handling mechanism. Returned backend failures are converted to ArcResult. Fatal termination inside libarchive itself, including some out-of-memory paths, is not intercepted; this is an explicitly accepted backend limitation.
 
 ## 2. Scope and file boundaries
 
-Arc has one public header and private archive modules. The independently buildable filekit sublibrary has its own public `filekit/filekit.h` and error values. Internal headers are not part of either library’s caller-facing API.
+arc has one public header and private archive modules. The independently buildable filekit sublibrary has its own public `filekit/filekit.h` and error values. Internal headers are not part of either library’s caller-facing API.
 
 | File | Responsibility |
 |---|---|
 | `arc.h` | Public types, declarations and contracts; standard C headers only. |
 | `arc.c` | Public operation wrappers, locale scopes, output publication and cleanup sequencing. |
-| `main.c` | CLI parsing, source/root naming policy, output selection and diagnostics. |
+| `main.c` | CLI parsing, automatic source/destination selection, tree display and diagnostics. |
+| `internal/pack.c` | Whole-operation packing, source basename/root mapping and writer ownership. |
 | `internal/arc_internal.h` | Private operation entry points; no writer representation. |
 | `internal/writer.c` | Writer state and ownership, chunks, filesystem traversal through libarchive, selected hard-link identity, close/discard. |
 | `internal/reader.c` | Sequential reader ownership/state, listing, statistics, file size and full-content verification. |
@@ -75,7 +76,7 @@ No runtime backend selector, registration mechanism, function-pointer dispatch t
 
 The public API does not promise that all backends support every format. Unsupported requests return `ARC_UNSUPPORTED`. Capability information refers to the current implementation and the dependencies actually available in that build.
 
-Inside the libarchive implementation, one authoritative translation table maps Arc identifiers to backend configuration. Creation and capability queries share this mapping. Registration, RAR5 setup and probe cleanup results are checked. Returned allocation and other technical probe failures do not silently remove capability bits; failed queries leave the output mask unchanged. Format registration warnings are errors. Filter registration warnings documented as external-program fallback mean the native filter is unavailable, and the probe is freed without use. ENOMEM has precedence over diagnostic-text classification. Library-wide format enablement is not evidence that every individual feature is available.
+Inside the libarchive implementation, one authoritative translation table maps arc identifiers to backend configuration. Creation and capability queries share this mapping. Registration, RAR5 setup and probe cleanup results are checked. Returned allocation and other technical probe failures do not silently remove capability bits; failed queries leave the output mask unchanged. Format registration warnings are errors. Filter registration warnings documented as external-program fallback mean the native filter is unavailable, and the probe is freed without use. ENOMEM has precedence over diagnostic-text classification. Library-wide format enablement is not evidence that every individual feature is available.
 
 ## 5. Formats and compression
 
@@ -84,7 +85,7 @@ Archive container format and outer compression are separate concepts.
 ```c
 /** Output archive configuration. */
 typedef struct {
-    /** Non-NULL, case-sensitive Arc format identifier. */
+    /** Non-NULL, case-sensitive arc format identifier. */
     const char *format;
 
     /** Non-NULL outer compression identifier; "none" means no wrapper. */
@@ -97,7 +98,7 @@ typedef struct {
 
 Named container identifiers are `tar`, `zip`, `7z`, `cpio`, `ar`, `iso9660`, `xar`, `warc`, `rar`, `cab` and `lha`. Named outer-compression identifiers are `none`, `gzip`, `bzip2`, `xz` and `zstd`.
 
-The named set is extensible. Identifiers belong to Arc; arbitrary backend option strings are not accepted. A new identifier requires a documented mapping and capability behavior.
+The named set is extensible. Identifiers belong to arc; arbitrary backend option strings are not accepted. A new identifier requires a documented mapping and capability behavior.
 
 Examples:
 
@@ -115,7 +116,7 @@ ZIP and 7z may compress entries internally even when outer compression is `none`
 
 Libarchive provides read/write support for TAR/PAX, ZIP, 7z, CPIO, AR, ISO9660, XAR and WARC, with format-specific limits. RAR/RAR5, CAB and LHA/LZH are read-only. Available compression depends on the linked build. See [libarchive's format summary](https://github.com/libarchive/libarchive/wiki/LibarchiveFormats).
 
-WARC requires libarchive 3.8.9 or newer: older readers misreport entry offsets or skip already-read content. XAR requires libarchive 3.8.2 or newer because older readers report archive offsets at entry EOF. With an older backend, Arc returns `ARC_UNSUPPORTED` for the affected format's capabilities, creation and reading before exposing entries. Other formats remain available.
+WARC requires libarchive 3.8.9 or newer: older readers misreport entry offsets or skip already-read content. XAR requires libarchive 3.8.2 or newer because older readers report archive offsets at entry EOF. With an older backend, arc returns `ARC_UNSUPPORTED` for the affected format's capabilities, creation and reading before exposing entries. Other formats remain available.
 
 Reading uses content detection and enables available archive readers rather than applying a filename-extension whitelist. Additional detected formats can be readable without becoming named creation options. `raw`, `mtree` and `shar` are not promised as ordinary multi-file extraction formats: their semantics differ from the primary abstraction.
 
@@ -158,6 +159,11 @@ typedef enum {
 typedef struct {
     ArcCode code;
     char message[256];
+    ArcReason reason;
+    char path[1024];
+    int path_truncated;
+    int partial_output;
+    char cleanup_message[256];
 } ArcResult;
 
 /** Statistics for a completed archive file. */
@@ -213,9 +219,9 @@ typedef enum {
 } ArcDestinationMode;
 
 typedef struct {
-    ArcDestinationMode destination_mode;
-    const char *password;
-} ArcUnpackOptions;
+    const ArcOptions *configuration;
+    int keep_root;
+} ArcPackOptions;
 
 /** Return OK to continue, or an error value to stop and propagate it. */
 typedef ArcResult (*ArcVisitor)(
@@ -234,19 +240,19 @@ Error classification:
 | `INVALID_ARGUMENT` | NULL required argument, invalid option structure or otherwise malformed request. |
 | `INVALID_STATE` | Operation is not allowed in the writer's current state. |
 | `INVALID_PATH` | Unsafe entry name or filesystem path invalid on the target platform. |
-| `ALREADY_EXISTS` | A destination or extraction collision would overwrite an existing object. |
+| `ALREADY_EXISTS` | An output object already exists, or archive entry paths conflict. |
 | `UNSUPPORTED` | Unavailable format, compression, archive feature or entry type. |
 | `INVALID_ARCHIVE` | Recognizable archive data is malformed or truncated. |
 | `SIZE_MISMATCH` | Entry data does not match its declared size. |
 | `OVERFLOW` | Size or count cannot be represented by the API or backend. |
 | `OUT_OF_MEMORY` | An allocation failed. |
-| `NOT_FOUND` | At least one extraction selector matched no archive record. |
+| `NOT_FOUND` | A required source is missing, or an extraction selector matched no record. |
 | `SELECTION_ERROR` | A selected hard link has a missing or excluded target. |
 | `PASSWORD_REQUIRED` | Encrypted content needs a password. |
 | `PASSWORD_REJECTED` | The backend rejects the supplied password. |
 | `IO_ERROR` | Filesystem, permission, input/output or backend finalization failure. |
 
-An unrecognized input is classified as unsupported; malformed recognized input is classified as invalid where the backend provides sufficient information. Exact diagnostics are not a stable API. Operation errors retain their primary code while bounded secondary cleanup diagnostics may be appended. Successful operations report cleanup failure when one occurs. Sequential reader operations and close preserve the exact first stream failure even if context restoration also fails; listing with a visitor failure likewise returns that original result unchanged; later cleanup/conversion-context failures are intentionally subordinate in those two contracts. Backend warnings that would compromise the requested result must not be treated as success. No implicit external-program fallback is permitted.
+An unrecognized input is classified as unsupported; malformed recognized input is classified as invalid where the backend provides sufficient information. Exact diagnostics are not a stable API. Operation errors retain their primary code and message; the first secondary cleanup diagnostic is stored separately in `cleanup_message`. Successful operations report cleanup failure when one occurs. Sequential reader operations and close preserve the exact first stream failure even if context restoration also fails; listing with a visitor failure likewise returns that original result unchanged; later cleanup/conversion-context failures are intentionally subordinate in those two contracts. Backend warnings that would compromise the requested result must not be treated as success. No implicit external-program fallback is permitted.
 
 Capabilities describe format/backend representation, not current privileges or destination-filesystem support. A readable link can be listed even when the host cannot create it. Permission failures return IO_ERROR; unavailable representation or filesystem functionality returns UNSUPPORTED where distinguishable. Unknown native failures return IO_ERROR with a diagnostic.
 
@@ -435,8 +441,7 @@ ArcResult arc_discard(ArcWriter **writer);
  *
  * archive_path: Non-NULL UTF-8 input path; input must remain unchanged.
  * destination: Non-NULL UTF-8 directory path; parent must exist.
- * options: Non-NULL root policy: NEW requires atomic directory creation;
- *          MERGE creates a missing directory or reuses an actual directory.
+ * Requires a new destination. arc_unpack_ex also supports directory merging.
  *
  * Detects format from content. Supports ordinary files, directories and
  * permitted symbolic/hard links. Rejects
@@ -449,8 +454,7 @@ ArcResult arc_discard(ArcWriter **writer);
  */
 ArcResult arc_unpack(
     const char *archive_path,
-    const char *destination,
-    const ArcUnpackOptions *options);
+    const char *destination);
 
 /**
  * Visit archive entries without extracting them to disk.
@@ -500,6 +504,20 @@ ArcResult arc_inspect(
     ArcInfo *info);
 ```
 
+### 8.0 Whole-operation helpers
+
+`arc_pack(archive, source)` packs one file, directory or symbolic link. A single
+directory contributes its contents; other sources retain their basenames.
+`arc_pack_ex(archive, sources, count, options)` supports multiple explicit sources,
+root retention and explicit archive configuration. It owns writer cleanup and
+attempts to remove its incomplete output after any failure, including close.
+Concurrent cwd/source/output replacement is unsupported. Cleanup checks output
+identity before removing a failed finalized archive.
+
+`arc_unpack(archive, destination)` creates a new destination with default options.
+`arc_ok(result)` tests `ARC_OK`. Advanced writer and sequential reader operations
+remain available. Sources are never inferred by the library.
+
 ### 8.1 Additive selection and verification API
 
 Selection uses `ArcExtractOptions`; verification can read content without extracting it:
@@ -510,6 +528,7 @@ typedef struct {
     const char *const *paths;
     size_t path_count;
     const char *password;
+    int strip_root;
 } ArcExtractOptions;
 
 ArcResult arc_unpack_ex(const char *archive_path,
@@ -577,7 +596,7 @@ Extraction NEW mode atomically creates its root and fails if any object already 
 
 Check destination components without following links. Never replace an existing symlink, junction or other redirection to make extraction succeed. Link entries cannot serve as parents for other archive entries. Protect the input archive itself from extraction collisions when extracting into its containing directory.
 
-Do not rely solely on libarchive's NO_OVERWRITE option: its Windows disk writer can skip an existing object and return success. Arc must classify collisions as ALREADY_EXISTS and preserve exclusive creation; a skipped required entry is not successful extraction. See the [Windows disk-writer implementation](https://raw.githubusercontent.com/libarchive/libarchive/master/libarchive/archive_write_disk_windows.c).
+Do not rely solely on libarchive's NO_OVERWRITE option: its Windows disk writer can skip an existing object and return success. arc must classify collisions as ALREADY_EXISTS and preserve exclusive creation; a skipped required entry is not successful extraction. See the [Windows disk-writer implementation](https://raw.githubusercontent.com/libarchive/libarchive/master/libarchive/archive_write_disk_windows.c).
 
 Output anchoring does not resolve future object replacement or parent renaming. POSIX anchoring joins the creation working directory with the original relative suffix without realpath or lexical collapse through symlinks. Windows reuses the existing Unicode long-path conversion. The caller must use a trusted parent directory and prevent concurrent path replacement. Protection against hostile concurrent filesystem mutation would require a stronger directory-handle-based contract and is outside this design.
 
@@ -591,7 +610,7 @@ Extraction accepts only relative targets whose resolution stays inside the desti
 
 Extract ordinary files/directories first, resolve hard-link groups next, and create validated symbolic links last. Deferred hard-link and symbolic-link graph traversal uses checked heap stacks, visiting states and resolved results rather than archive-depth recursion on the C stack. Symbolic frames retain continuations so subsequent components, including .., are interpreted after nested link resolution. Required parent directories are built iteratively. Allocation/size failures return results; no public depth quota is added. Never use an archive-created link as an intermediate directory. Do not apply chmod or timestamp operations by following symbolic-link targets. Link-specific metadata is best-effort only when safely available.
 
-Libarchive's ZIP writer supports symbolic-link records, but its implementation notes that link handling is not standardized. Other ZIP tools may not restore them as links. ZIP symbolic-link support is therefore a tested Arc/backend capability, not a promise of universal ZIP interoperability. See the [ZIP writer](https://raw.githubusercontent.com/libarchive/libarchive/master/libarchive/archive_write_set_format_zip.c).
+Libarchive's ZIP writer supports symbolic-link records, but its implementation notes that link handling is not standardized. Other ZIP tools may not restore them as links. ZIP symbolic-link support is therefore a tested arc/backend capability, not a promise of universal ZIP interoperability. See the [ZIP writer](https://raw.githubusercontent.com/libarchive/libarchive/master/libarchive/archive_write_set_format_zip.c).
 
 ### 10.2 Hard links
 
@@ -599,7 +618,7 @@ Identify ordinary-file groups using stable filesystem identity, not matching con
 
 On extraction, targets use archive-root-relative entry names, not symbolic-link-relative resolution. Resolve groups even when data or referenced entries occur later. Every alias must ultimately reference an ordinary data-bearing member from this archive created by this extraction. Never link to a pre-existing destination file, directory or symbolic link. Missing/cyclic targets and conflicting member metadata fail as INVALID_ARCHIVE; unsafe targets fail as INVALID_PATH. Shared ordinary-file metadata belongs to the resolved data-bearing member, not independently to aliases. Hard links to symlink objects or directories are outside this contract.
 
-TAR/PAX can preserve hard links. Libarchive's documented ZIP strategy stores independent bodies instead; Arc must detect a second selected alias and return UNSUPPORTED rather than silently lose the relationship. CPIO strategies differ and require group normalization/deferred flushing. See [libarchive's hard-link resolver](https://raw.githubusercontent.com/libarchive/libarchive/master/libarchive/archive_entry_linkify.3). Support of other formats must be verified before advertising their hard-link capability.
+TAR/PAX can preserve hard links. Libarchive's documented ZIP strategy stores independent bodies instead; arc must detect a second selected alias and return UNSUPPORTED rather than silently lose the relationship. CPIO strategies differ and require group normalization/deferred flushing. See [libarchive's hard-link resolver](https://raw.githubusercontent.com/libarchive/libarchive/master/libarchive/archive_entry_linkify.3). Support of other formats must be verified before advertising their hard-link capability.
 
 ### 10.3 Windows limitations
 
@@ -634,6 +653,21 @@ The API sets no extraction byte quota, entry-count quota or decompression-ratio 
 
 `arc_inspect` may need to traverse compressed content to reach later entries. It is not guaranteed to be cheap. `content_bytes` is a logical-size sum, not required free disk space or a full integrity check.
 
+All available creation configurations accept entries in multiple chunks with
+an exact declared size. The format matrix tests binary-safe begin/write/end
+through the public API. This is independent of backend output strategy:
+
+| Creation format | Chunk input | Resource contract |
+|---|---|---|
+| TAR, ZIP, CPIO, AR | Supported when creation is available | No whole-backend memory bound is promised; entry/identity indexes grow with entries. |
+| 7z, XAR, WARC | Supported when creation is available | Backend buffering/temp storage may be used; no incremental-output guarantee. |
+| ISO9660 | Supported when creation is available | libarchive stages file contents in temporary storage before final image output. |
+| RAR, CAB, LHA | Creation unavailable | Returns `ARC_UNSUPPORTED`; no output substitution. |
+
+Unknown-size entry writing and non-seekable/custom output are outside the API.
+Unsupported representations return `ARC_UNSUPPORTED`; chunk input alone must
+never be advertised as a guarantee of unbuffered streaming.
+
 ## 13. Implemented extensions and deferred scope
 
 ### 13.1 Selective extraction and content verification
@@ -642,6 +676,18 @@ The API sets no extraction byte quota, entry-count quota or decompression-ratio 
 
 `arc_verify` reads every entry body to EOF without extracting files, checks declared ordinary-file sizes where known and propagates all backend integrity warnings/errors. It does not require safe extraction names, unique paths, supported host object types or normalized CPIO alias groups. It does not establish authenticity or safe extraction. Plain TAR has no per-file content checksum; same-size payload changes may remain undetected. Skipping entries in list/inspect or selective unpack is not equivalent to verification.
 
+### Root stripping
+
+`strip_root` performs an extra metadata pass over the whole archive before
+creating the destination. Normalized safe names must share one directory root;
+empty archives, multiple roots and root-level non-directory entries fail.
+Root-only directories create an empty destination. Original selectors apply
+before transformation; required hard-link target paths are stripped as well.
+Relative symlink text is preserved and validated against the transformed tree;
+links leaving that tree are rejected. The omitted root's metadata is not applied.
+Compressed input can be decompressed again during the second pass. Input must
+remain unchanged for the complete operation.
+
 ### 13.2 Passwords
 
 Creation with a non-NULL `ArcOptions.password` requires ZIP and uses AES-256.
@@ -649,7 +695,7 @@ Only nonempty ordinary-file contents are encrypted; names, metadata, symbolic-li
 targets, empty files and directories remain visible. Other output formats reject
 password-protected creation before creating output.
 
-`ArcReadOptions`, `ArcUnpackOptions` and `ArcExtractOptions` accept a nonempty
+`ArcReadOptions` and `ArcExtractOptions` accept a nonempty
 UTF-8 password; NULL means none. Empty or invalid UTF-8 passwords are rejected.
 Read options are used by `arc_reader_open_ex`, `arc_list_ex`, `arc_inspect_ex`
 and `arc_verify_ex`. Reading supports ZIP AES and ZipCrypto where available in
@@ -686,8 +732,8 @@ Interactive password entry and password callbacks are outside the API.
 ```text
 Usage:
   arc pack [--format FORMAT] [--keep-root] [--password PASSWORD] ARCHIVE [SOURCE...]
-  arc unpack [--entry PATH]... [--password PASSWORD] ARCHIVE [DESTINATION]
-  arc list [--password PASSWORD] ARCHIVE
+  arc unpack [--strip-root] [--entry PATH]... [--password PASSWORD] ARCHIVE [DESTINATION]
+  arc list [--tree] [--password PASSWORD] ARCHIVE
   arc info [--password PASSWORD] ARCHIVE
   arc verify [--password PASSWORD] ARCHIVE
   arc --help
@@ -732,7 +778,7 @@ arc unpack /tmp/ppa.tar.gz
 
 Without DESTINATION, use the archive basename minus its full recognized suffix as a directory in the current working directory; `/tmp/ppa.tar.gz` therefore extracts to `./ppa`. Naming recognizes the creation suffixes plus readable `.rar`, `.cab`, `.lha`, `.lzh`, `.cpio`, `.ar`, `.iso`, `.xar` and `.warc`. Match ASCII suffixes case-insensitively and choose the longest match. An unknown suffix appends `.extracted` to the whole basename. If stripping yields an empty, reserved or invalid component, try the whole basename plus `.extracted`; if that is invalid, require an explicit destination. Never silently choose a numbered directory.
 
-Automatic destination uses NEW mode, so an existing object causes an error. An explicit destination uses MERGE mode, creates a missing directory or reuses an actual existing directory, and never overwrites files or links. Existing directories keep their permissions and ownership; archive metadata is not applied to them. Creating children may naturally change their timestamps, which are not restored. Parent directories must exist. No extraction step removes an archive's top-level directory: entry paths are preserved as stored. Input format is detected from content regardless of the filename.
+Automatic destination uses NEW mode, so an existing object causes an error. An explicit destination uses MERGE mode, creates a missing directory or reuses an actual existing directory, and never overwrites files or links. Existing directories keep their permissions and ownership; archive metadata is not applied to them. Creating children may naturally change their timestamps, which are not restored. Parent directories must exist. By default entry paths are preserved. Explicit `--strip-root` / `ArcExtractOptions.strip_root` removes exactly one common root after preflight. Input format is detected from content regardless of the filename.
 
 ### 14.3 List, info and parsing
 
@@ -740,7 +786,7 @@ The `verify` command reads all entry bodies and reports success only after compl
 
 List prints every entry's type, logical size when known and path; links also show their targets. It uses arc_list, not extraction. Escape control characters in displayed names/targets so one record cannot forge terminal output. Info prints disk size, data-bearing content size and counts by type. Neither command modifies the filesystem or requires permission to create links.
 
-Paths containing spaces are shell-quoted. After the subcommand, parse supported options before operands; -- ends option parsing. Options after the first operand are not recognized. Unknown options, extra operands and missing required operands are usage errors. Provide --help globally and for each subcommand. Shell wildcard expansion remains the shell's responsibility; Arc does not implement its own globbing.
+Paths containing spaces are shell-quoted. After the subcommand, parse supported options before operands; -- ends option parsing. Options after the first operand are not recognized. Unknown options, extra operands and missing required operands are usage errors. Provide --help globally and for each subcommand. Shell wildcard expansion remains the shell's responsibility; arc does not implement its own globbing.
 
 No interactive overwrite prompt, --overwrite, automatic skipping or silent substitution is included. Successful modifying commands print a brief completion message only after successful finalization/extraction. Operation failures identify the operation and path when available. Link and extraction failures can leave partial extracted output, which the diagnostic must identify. Output paths are never opened with truncation to resolve a conflict.
 
@@ -769,8 +815,7 @@ result = arc_close(&writer);
 if (result.code != ARC_OK)
     return report_error(result);
 
-ArcUnpackOptions unpack_options = { ARC_DESTINATION_NEW };
-result = arc_unpack("example.tar.zst", "extracted", &unpack_options);
+result = arc_unpack("example.tar.zst", "extracted");
 if (result.code != ARC_OK)
     return report_error(result);
 ```
@@ -794,11 +839,11 @@ The CLI's directory-content policy is expressed explicitly at the library bounda
 result = arc_add_path(writer, "./ppa", "");
 
 /* An explicitly selected destination may merge actual directories only. */
-ArcUnpackOptions merge = { ARC_DESTINATION_MERGE };
-result = arc_unpack("ppa.zip", ".", &merge);
+ArcExtractOptions merge = {.destination_mode = ARC_DESTINATION_MERGE};
+result = arc_unpack_ex("ppa.zip", ".", &merge);
 ```
 
-These independent fragments require normal result checks and writer cleanup. CLI policy chooses the root mapping; the library owns traversal, link handling and collision enforcement.
+These independent fragments require normal result checks and writer cleanup. The pack helper owns source/root mapping; writer traversal owns link handling and collision enforcement.
 
 ## 16. Build and integration
 
@@ -853,16 +898,16 @@ Before making any such change, preserve the existing human-oriented operation vo
 Important distinctions:
 
 - Link support is a format/backend feature plus a runtime filesystem/privilege condition.
-- ZIP hard-link body duplication is unsuitable for Arc's preservation contract.
+- ZIP hard-link body duplication is unsuitable for arc's preservation contract.
 - A backend NO_OVERWRITE flag is not sufficient evidence of a conflict error.
 - Windows reparse points are not interchangeable with symbolic links.
 - A chunk API does not establish constant memory consumption or non-seekable I/O support.
 
-The design intentionally adds entry-name/identity indexes and deferred link resolution because the accepted CLI and preservation contracts require them. All Arc-owned helper failures and returned native/backend failures flow through explicit result values.
+The design intentionally adds entry-name/identity indexes and deferred link resolution because the accepted CLI and preservation contracts require them. All arc-owned helper failures and returned native/backend failures flow through explicit result values.
 
 ### Accepted backend failure boundary
 
-Arc uses unmodified libarchive with the following boundary: Arc-owned failures and returned dependency failures use result values, while dependency-internal fatal termination is outside the return-value guarantee. Certain libarchive entry-string getters call a fatal helper on allocation failure; that helper exits the process. No exception interception, signal recovery, subprocess isolation or patched libarchive build is added.
+arc uses unmodified libarchive with the following boundary: arc-owned failures and returned dependency failures use result values, while dependency-internal fatal termination is outside the return-value guarantee. Certain libarchive entry-string getters call a fatal helper on allocation failure; that helper exits the process. No exception interception, signal recovery, subprocess isolation or patched libarchive build is added.
 
 Evidence: [entry string getters](https://github.com/libarchive/libarchive/blob/master/libarchive/archive_entry.c) and [fatal helper](https://github.com/libarchive/libarchive/blob/master/libarchive/archive_util.c).
 
@@ -902,3 +947,22 @@ ArcResult cleanup = arc_reader_close(&reader);
 ```
 
 The current public header is authoritative for all reader signatures and lifetime/error contracts. Generic callback-based I/O is outside the public API.
+
+## API migration
+
+The everyday API changes are source/ABI incompatible with the original header:
+recompile all consumers. Replace three-argument `arc_unpack` with the two-argument
+helper for new destinations, or move options to `ArcExtractOptions` and call
+`arc_unpack_ex`. `ArcUnpackOptions` has been removed. Zero-initialize options and
+results (or use designated initializers in C); `ArcResult` now owns structured
+reason/path/partial-output/cleanup fields. `ArcReason` is declared in `arc.h`.
+Diagnostic paths are bounded to 1023 bytes plus NUL and marked when truncated;
+truncation preserves UTF-8 boundaries. Paths are for diagnostics, not retry input.
+`reason == ARC_REASON_NONE` means no specialized classification is available.
+The CLI supplies operation context, hints and multiline layout; library calls do
+not print. Emoji remain terminal-only; color still respects NO_COLOR.
+
+`list --tree` collects metadata and sorts literal path components without
+extraction. It synthesizes missing parent rows and keeps repeated archive records
+visible. It does not certify safe extraction and uses memory proportional to the
+collected paths and their parent prefixes.

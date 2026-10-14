@@ -25,6 +25,8 @@
 #include <unistd.h>
 #endif
 
+static const char ARC_PROGRAM_NAME[] = "arc";
+
 /* Presentation belongs to the CLI; NO_COLOR disables ANSI color, not emoji. */
 typedef enum { MESSAGE_SUCCESS, MESSAGE_ERROR, MESSAGE_WARNING } MessageKind;
 
@@ -114,33 +116,135 @@ static int usage(const char *command, int error) {
     if (error)
         message(MESSAGE_ERROR, "Error:", " invalid arguments%s%s.", command ? " for " : "",
                 command ? command : "");
-    if (!command || !strcmp(command, "pack"))
-        fprintf(out, "Usage: arc pack [--format FORMAT] [--keep-root] [--password VALUE] ARCHIVE "
-                     "[SOURCE...]\n");
-    if (!command || !strcmp(command, "unpack"))
+    if (!command) {
         fprintf(out,
-                "Usage: arc unpack [--entry PATH]... [--password VALUE] ARCHIVE [DESTINATION]\n");
-    if (!command || !strcmp(command, "list"))
-        fprintf(out, "Usage: arc list [--password VALUE] ARCHIVE\n");
-    if (!command || !strcmp(command, "info"))
-        fprintf(out, "Usage: arc info [--password VALUE] ARCHIVE\n");
-    if (!command || !strcmp(command, "verify"))
-        fprintf(out, "Usage: arc verify [--password VALUE] ARCHIVE\n");
-    if (!command)
-        fprintf(out, "Usage: arc --help\nUsage: arc --version\n");
-    fprintf(out,
-            "\nPack infers the format from the output suffix. A single directory\n"
-            "contributes its contents; --keep-root retains the directory itself.\n"
-            "Without sources, pack uses the directory named after the archive in the current\n"
-            "directory. Unpack defaults to a new directory named after the archive.\n"
-            "An explicit destination may merge directories. Files are never overwritten.\n"
-            "--entry selects an exact archive path and its subtree; paths are preserved.\n"
-            "List prints entries; info prints sizes and counts.\n"
-            "Verify reads all content and checks integrity where the format permits.\n"
-            "Verification does not establish safe extraction or detect every TAR data change.\n"
-            "--password supplies a password; pack writes ZIP AES-256 (names stay visible).\n"
-            "Use -- before paths beginning with '-'. Options precede operands.\n");
+                "Usage: %s COMMAND [OPTIONS]\n\n"
+                "Commands:\n"
+                "  pack     Create an archive from files or a directory\n"
+                "  unpack   Extract without overwriting files or links\n"
+                "  list     Show archive entries; --tree shows a tree\n"
+                "  info     Show sizes and entry counts\n"
+                "  verify   Read content and run available integrity checks\n\n"
+                "Examples:\n  %s pack project.zip ./project\n"
+                "  %s unpack project.zip\n\n"
+                "Use %s COMMAND --help for details.\n"
+                "Usage: %s --help\nUsage: %s --version\n",
+                ARC_PROGRAM_NAME, ARC_PROGRAM_NAME, ARC_PROGRAM_NAME, ARC_PROGRAM_NAME,
+                ARC_PROGRAM_NAME, ARC_PROGRAM_NAME);
+    } else if (!strcmp(command, "pack")) {
+        fprintf(
+            out,
+            "Usage: %s pack [--format FORMAT] [--keep-root] [--password VALUE] ARCHIVE "
+            "[SOURCE...]\n\n"
+            "The output suffix selects the format. --format supplies an explicit format.\n"
+            "A single directory contributes its contents; --keep-root retains its name.\n"
+            "Multiple sources retain their basenames. Existing archives are never overwritten.\n"
+            "Without SOURCE, use the directory named after ARCHIVE in the current directory.\n"
+            "Example: %s pack docs.zip packs the contents of ./docs.\n"
+            "--password writes ZIP AES-256; names remain visible.\n",
+            ARC_PROGRAM_NAME, ARC_PROGRAM_NAME);
+    } else if (!strcmp(command, "unpack")) {
+        fprintf(out,
+                "Usage: %s unpack [--strip-root] [--entry PATH]... [--password VALUE] ARCHIVE "
+                "[DESTINATION]\n\n"
+                "Without DESTINATION, create a new directory named after the archive in the "
+                "current directory.\n"
+                "An explicit destination may merge directories. Files and links are never "
+                "overwritten.\n"
+                "Stored paths are preserved. --strip-root removes one common root directory;\n"
+                "mixed roots and root-level files are rejected before creating the destination.\n"
+                "--entry selects an original archive path and its subtree, before root stripping.\n"
+                "Extraction failures may leave partial output.\n"
+                "Example: %s unpack --strip-root project.zip ./restored\n",
+                ARC_PROGRAM_NAME, ARC_PROGRAM_NAME);
+    } else {
+        fprintf(out, "Usage: %s %s %s[--password VALUE] ARCHIVE\n\n", ARC_PROGRAM_NAME, command,
+                !strcmp(command, "list") ? "[--tree] " : "");
+        if (!strcmp(command, "list"))
+            fputs("Show entries without extracting. --tree groups paths; repeated entries remain "
+                  "visible.\n",
+                  out);
+        else if (!strcmp(command, "info"))
+            fputs("Show archive size, content size and counts by entry type.\n", out);
+        else
+            fputs("Read every entry and run available integrity checks.\n"
+                  "Verification does not establish safe extraction or detect every TAR data "
+                  "change.\n",
+                  out);
+    }
+    fputs("\nOptions precede operands. Use -- before paths beginning with '-'.\n", out);
     return error ? 2 : 0;
+}
+
+static int argument_error(const char *command, const char *detail, const char *value) {
+    message(MESSAGE_ERROR, "Error:", " %s%s%s", detail, value ? ": " : "", value ? value : "");
+    fprintf(stderr, "Use %s%s%s --help for usage.\n", ARC_PROGRAM_NAME, command ? " " : "",
+            command ? command : "");
+    return 2;
+}
+
+static int report_operation(ArcResult r, const char *action, const char *archive,
+                            const char *destination) {
+    if (arc_ok(r))
+        return 0;
+    message(MESSAGE_ERROR, action, " \"%s\"", archive);
+    fputc('\n', stderr);
+    const char *reason = NULL, *hint = NULL;
+    switch (r.reason) {
+    case ARC_REASON_DESTINATION_EXISTS:
+        reason = "Destination already exists:";
+        hint = destination ? "Choose another destination." : "Choose another archive path.";
+        break;
+    case ARC_REASON_ENTRY_EXISTS:
+        reason = "An entry already exists at the destination:";
+        hint = destination ? "Choose another destination." : "Choose another archive path.";
+        break;
+    case ARC_REASON_ARCHIVE_CONFLICT:
+        reason = "Conflicting archive entries:";
+        hint = destination ? "Use an archive with distinct, compatible entry paths."
+                           : "Choose sources with distinct, compatible archive paths.";
+        break;
+    case ARC_REASON_UNSAFE_PATH:
+        reason = "Unsafe archive path:";
+        break;
+    case ARC_REASON_STRIP_ROOT:
+        hint = "Extract without --strip-root, or use an archive with one root directory.";
+        break;
+    default:
+        break;
+    }
+    if (reason)
+        fprintf(stderr, "%s\n", reason);
+    else {
+        display_text(stderr, r.message, 1);
+        fputc('\n', stderr);
+    }
+    if (*r.path) {
+        fputs("  ", stderr);
+        display_text(stderr, r.path, 1);
+        fputs(r.path_truncated ? " [path truncated]\n" : "\n", stderr);
+    }
+    if (r.reason == ARC_REASON_DESTINATION_EXISTS || r.reason == ARC_REASON_ENTRY_EXISTS)
+        fprintf(stderr, "\n%s does not overwrite existing files or links.\n", ARC_PROGRAM_NAME);
+    if (r.code == ARC_PASSWORD_REQUIRED)
+        hint = "Supply a password with --password VALUE.";
+    else if (r.code == ARC_PASSWORD_REJECTED)
+        hint = "Check the password and try again.";
+    if (hint)
+        fprintf(stderr, "%s\n", hint);
+    if (r.partial_output) {
+        fputs(destination ? "\nSome files may have been extracted to:\n  "
+                          : "\nAn incomplete archive may remain:\n  ",
+              stderr);
+        display_text(stderr, destination ? destination : archive, 1);
+        fputc('\n', stderr);
+    }
+    if (*r.cleanup_message) {
+        fputs("\nCleanup also failed:\n  ", stderr);
+        display_text(stderr, r.cleanup_message, 1);
+        fputc('\n', stderr);
+    }
+    return 1;
 }
 
 static int separator(char c) {
@@ -167,52 +271,6 @@ static char *duplicate(const char *s) {
     return p;
 }
 #ifdef _WIN32
-static wchar_t *to_wide(const char *s) {
-    int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s, -1, NULL, 0);
-    if (!n)
-        return NULL;
-    wchar_t *w = malloc((size_t)n * sizeof *w);
-    if (w)
-        MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s, -1, w, n);
-    return w;
-}
-
-static wchar_t *to_wide_path(const char *s) {
-    wchar_t *w = to_wide(s);
-    if (!w)
-        return NULL;
-    for (wchar_t *p = w; *p; ++p)
-        if (*p == L'/')
-            *p = L'\\';
-    DWORD n = GetFullPathNameW(w, 0, NULL, NULL);
-    wchar_t *absolute = n ? malloc((size_t)n * sizeof *absolute) : NULL;
-    wchar_t *full = n ? malloc(((size_t)n + 8) * sizeof *full) : NULL;
-    if (!absolute || !full) {
-        free(w);
-        free(absolute);
-        free(full);
-        return NULL;
-    }
-    DWORD written = GetFullPathNameW(w, n, absolute, NULL);
-    free(w);
-    if (!written || written >= n) {
-        free(absolute);
-        free(full);
-        return NULL;
-    }
-    if (!wcsncmp(absolute, L"\\\\?\\", 4))
-        wcscpy(full, absolute);
-    else if (!wcsncmp(absolute, L"\\\\", 2)) {
-        wcscpy(full, L"\\\\?\\UNC\\");
-        wcscat(full, absolute + 2);
-    } else {
-        wcscpy(full, L"\\\\?\\");
-        wcscat(full, absolute);
-    }
-    free(absolute);
-    return full;
-}
-
 static char *from_wide(const wchar_t *s) {
     int n = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, s, -1, NULL, 0, NULL, NULL);
     if (!n)
@@ -223,119 +281,25 @@ static char *from_wide(const wchar_t *s) {
     return p;
 }
 #endif
-static int source_directory(const char *path, int *directory) {
-#ifdef _WIN32
-    wchar_t *w = to_wide_path(path);
-    if (!w) {
-        message(MESSAGE_ERROR, "Error:", " cannot convert source path.");
-        return 1;
-    }
-    DWORD attributes = GetFileAttributesW(w);
-    DWORD native_error = GetLastError();
-    free(w);
-    if (attributes == INVALID_FILE_ATTRIBUTES) {
-        message(MESSAGE_ERROR, "Error:", " cannot inspect '%s': Windows error %lu.", path,
-                (unsigned long)native_error);
-        return 1;
-    }
-    *directory =
-        !!(attributes & FILE_ATTRIBUTE_DIRECTORY) && !(attributes & FILE_ATTRIBUTE_REPARSE_POINT);
-#else
-    struct stat s;
-    if (lstat(path, &s) < 0) {
-        message(MESSAGE_ERROR, "Error:", " cannot inspect '%s': %s.", path, strerror(errno));
-        return 1;
-    }
-    *directory = S_ISDIR(s.st_mode);
-#endif
-    return 0;
-}
-
-static char *source_name(const char *path, int directory) {
-    char *copy = duplicate(path);
-    if (!copy)
-        return NULL;
-    size_t n = strlen(copy);
-    while (n > 1 && separator(copy[n - 1]))
-        copy[--n] = 0;
-    const char *base = basename_of(copy);
-    char *name = NULL;
-    if (directory && (!strcmp(base, ".") || !strcmp(base, ".."))) {
-#ifdef _WIN32
-        wchar_t *w = to_wide(copy);
-        DWORD size = w ? GetFullPathNameW(w, 0, NULL, NULL) : 0;
-        wchar_t *full = size ? malloc((size_t)size * sizeof *full) : NULL;
-        if (full && GetFullPathNameW(w, size, full, NULL)) {
-            char *utf8 = from_wide(full);
-            if (utf8) {
-                name = duplicate(basename_of(utf8));
-                free(utf8);
-            }
-        }
-        free(w);
-        free(full);
-#else
-        char *full = realpath(copy, NULL);
-        if (full) {
-            name = duplicate(basename_of(full));
-            free(full);
-        }
-#endif
-    } else
-        name = duplicate(base);
-    free(copy);
-    return name;
+static ArcResult source_directory(const char *path, int *directory) {
+    FilekitInfo info = {0};
+    ArcResult r = ar_from_filekit(filekit_info(path, &info));
+    if (arc_ok(r) && !info.exists)
+        r = ar_result(ARC_NOT_FOUND, "Source directory not found: '%s'.", path);
+    if (arc_ok(r))
+        *directory = info.directory && !info.symbolic;
+    return r;
 }
 
 static int pack_sources(const char *output, const ArcOptions *options, int keep_root, int sources,
                         char **args) {
-    for (int j = 0; j < sources; ++j) {
-        size_t length = strlen(args[j]);
-        while (length > 1 && separator(args[j][length - 1])) {
-#ifdef _WIN32
-            if (length == 3 && args[j][1] == ':')
-                break;
-#endif
-            args[j][--length] = 0;
+    ArcPackOptions pack_options = {.configuration = options, .keep_root = keep_root};
+    ArcResult r = arc_pack_ex(output, (const char *const *)args, (size_t)sources, &pack_options);
+    if (report_operation(r, "Cannot create", output, NULL)) {
+        if (r.code == ARC_INVALID_ARGUMENT) {
+            fprintf(stderr, "Use %s pack --help for usage.\n", ARC_PROGRAM_NAME);
+            return 2;
         }
-    }
-    int i = 0;
-    int first_directory;
-    if (source_directory(args[i], &first_directory))
-        return 1;
-    if (keep_root && (sources != 1 || !first_directory))
-        return usage("pack", 1);
-    ArcWriter *writer = NULL;
-    ArcResult r = arc_create_ex(output, options, &writer);
-    if (report(r))
-        return 1;
-    for (; i < sources; ++i) {
-        int is_directory;
-        if (source_directory(args[i], &is_directory)) {
-            ArcResult cleanup = arc_discard(&writer);
-            report(cleanup);
-            return 1;
-        }
-        char *name = sources == 1 && is_directory && !keep_root
-                         ? duplicate("")
-                         : source_name(args[i], is_directory);
-        if (!name) {
-            r = (ArcResult){ARC_OUT_OF_MEMORY, "Cannot determine source name."};
-        } else if (!*name && !(sources == 1 && is_directory && !keep_root)) {
-            r = (ArcResult){ARC_INVALID_PATH, "Source root has no archive basename."};
-        } else
-            r = arc_add_path(writer, args[i], name);
-        free(name);
-        if (r.code != ARC_OK) {
-            report(r);
-            ArcResult cleanup = arc_discard(&writer);
-            report(cleanup);
-            return 1;
-        }
-    }
-    r = arc_close(&writer);
-    if (report(r)) {
-        message(MESSAGE_WARNING, "Incomplete archive may remain:", " %s", output);
         return 1;
     }
     message(MESSAGE_SUCCESS, "Created", " %s", output);
@@ -367,10 +331,15 @@ static int pack(int count, char **args) {
             i += 2;
             continue;
         }
-        return usage("pack", 1);
+        return argument_error("pack",
+                              (!strcmp(args[i], "--password") || !strcmp(args[i], "--format")) &&
+                                      i + 1 == count
+                                  ? "Missing option value"
+                                  : "Unknown or repeated option",
+                              args[i]);
     }
     if (count - i < 1)
-        return usage("pack", 1);
+        return argument_error("pack", "Missing archive path", NULL);
     const char *output = args[i++];
     int sources = count - i;
     const ArchiveSuffix *suffix = ar_suffix_of(output, 1);
@@ -390,7 +359,8 @@ static int pack(int count, char **args) {
     const char *base = basename_of(output);
     char *source = duplicate(base);
     if (!source)
-        return report((ArcResult){ARC_OUT_OF_MEMORY, "Cannot determine source directory."});
+        return report((ArcResult){.code = ARC_OUT_OF_MEMORY,
+                                  .message = "Cannot determine source directory."});
     if (suffix)
         source[strlen(source) - strlen(suffix->suffix)] = 0;
     if (!*source || !strcmp(source, ".") || !strcmp(source, "..")) {
@@ -399,15 +369,17 @@ static int pack(int count, char **args) {
                 "Error:", " cannot derive a source directory; specify sources explicitly.");
         return 2;
     }
-    int directory;
-    if (source_directory(source, &directory)) {
+    int directory = 0;
+    ArcResult inspection = source_directory(source, &directory);
+    if (report_operation(inspection, "Cannot create", output, NULL)) {
         fprintf(stderr, "Specify sources explicitly.\n");
         free(source);
         return 1;
     }
     if (!directory) {
-        message(MESSAGE_ERROR, "Error:", " '%s' is not a directory; specify sources explicitly.",
-                source);
+        report_operation(ar_result(ARC_INVALID_PATH,
+                                   "'%s' is not a directory; specify sources explicitly.", source),
+                         "Cannot create", output, NULL);
         free(source);
         return 1;
     }
@@ -435,8 +407,119 @@ static ArcResult print_entry(const ArcEntry *e, void *context) {
     }
     putchar('\n');
     if (ferror(stdout))
-        return (ArcResult){ARC_IO_ERROR, "Cannot write entry listing."};
-    return (ArcResult){ARC_OK, {0}};
+        return (ArcResult){.code = ARC_IO_ERROR, .message = "Cannot write entry listing."};
+    return (ArcResult){.code = ARC_OK, .message = {0}};
+}
+
+typedef struct {
+    char *path, *target;
+    ArcEntryType type;
+    int implicit;
+} TreeRow;
+
+typedef struct {
+    TreeRow *rows;
+    size_t count, capacity;
+} Tree;
+
+static ArcResult tree_row(Tree *tree, const char *path, const char *target, ArcEntryType type,
+                          int implicit) {
+    if (tree->count == tree->capacity) {
+        size_t capacity = tree->capacity ? tree->capacity * 2 : 32;
+        if (capacity < tree->capacity || capacity > SIZE_MAX / sizeof(TreeRow))
+            return (ArcResult){.code = ARC_OVERFLOW, .message = "Too many tree entries."};
+        TreeRow *rows = realloc(tree->rows, capacity * sizeof *rows);
+        if (!rows)
+            return (ArcResult){.code = ARC_OUT_OF_MEMORY, .message = "Cannot allocate tree."};
+        tree->rows = rows;
+        tree->capacity = capacity;
+    }
+    char *name = duplicate(path), *link = target ? duplicate(target) : NULL;
+    if (!name || (target && !link)) {
+        free(name);
+        free(link);
+        return (ArcResult){.code = ARC_OUT_OF_MEMORY, .message = "Cannot retain tree entry."};
+    }
+    tree->rows[tree->count++] = (TreeRow){name, link, type, implicit};
+    return (ArcResult){.code = ARC_OK};
+}
+
+static ArcResult collect_tree(const ArcEntry *entry, void *context) {
+    Tree *tree = context;
+    char *name = duplicate(entry->path);
+    if (!name)
+        return (ArcResult){.code = ARC_OUT_OF_MEMORY, .message = "Cannot retain tree path."};
+    /* Display literal components: listing does not reinterpret extraction safety. */
+    size_t n = strlen(name);
+    while (n > 1 && name[n - 1] == '/')
+        name[--n] = 0;
+    ArcResult r = tree_row(tree, name, entry->link_target, entry->type, 0);
+    for (char *p = name; *p && arc_ok(r); ++p) {
+        if (*p != '/' || p == name)
+            continue;
+        *p = 0;
+        r = tree_row(tree, name, NULL, ARC_ENTRY_DIRECTORY, 1);
+        *p = '/';
+    }
+    free(name);
+    return r;
+}
+
+static int compare_tree_rows(const void *left, const void *right) {
+    const TreeRow *a = left, *b = right;
+    /* Sort components before their children (including names such as a.txt). */
+    const unsigned char *x = (const unsigned char *)a->path;
+    const unsigned char *y = (const unsigned char *)b->path;
+    while (*x && *x == *y) {
+        ++x;
+        ++y;
+    }
+    int order = *x == *y ? 0 : !*x ? -1 : !*y ? 1 : *x == '/' ? -1 : *y == '/' ? 1 : *x - *y;
+    return order ? order : a->implicit - b->implicit;
+}
+
+static ArcResult list_tree(const char *path, const ArcReadOptions *options) {
+    Tree tree = {0};
+    ArcResult r = arc_list_ex(path, options, collect_tree, &tree);
+    if (arc_ok(r) && tree.count) {
+        qsort(tree.rows, tree.count, sizeof *tree.rows, compare_tree_rows);
+        for (size_t i = 0; i < tree.count;) {
+            size_t end = i + 1;
+            while (end < tree.count && !strcmp(tree.rows[i].path, tree.rows[end].path))
+                ++end;
+            for (size_t j = i; j < end; ++j) {
+                TreeRow *row = &tree.rows[j];
+                if (row->implicit && j != i)
+                    continue;
+                const char *name = row->path;
+                for (const char *p = row->path; *p; ++p)
+                    if (*p == '/' && p != row->path) {
+                        fputs("  ", stdout);
+                        name = p + 1;
+                    }
+                fputs("|-- ", stdout);
+                escaped(name);
+                if (row->type == ARC_ENTRY_DIRECTORY)
+                    putchar('/');
+                if (row->target) {
+                    fputs(row->type == ARC_ENTRY_HARD_LINK ? " => " : " -> ", stdout);
+                    escaped(row->target);
+                }
+                if (end - i > 1 && !row->implicit && !tree.rows[i + 1].implicit)
+                    fputs(" [repeated path]", stdout);
+                putchar('\n');
+            }
+            i = end;
+        }
+        if (ferror(stdout))
+            r = (ArcResult){.code = ARC_IO_ERROR, .message = "Cannot write tree listing."};
+    }
+    for (size_t i = 0; i < tree.count; ++i) {
+        free(tree.rows[i].path);
+        free(tree.rows[i].target);
+    }
+    free(tree.rows);
+    return r;
 }
 
 static int valid_destination_name(const char *name) {
@@ -496,13 +579,14 @@ static char *destination_name(const char *archive) {
 
 static int unpack(int count, char **args) {
     if (!count)
-        return usage("unpack", 1);
+        return argument_error("unpack", "Missing archive path", NULL);
     const char **selected = calloc((size_t)count, sizeof *selected);
     if (!selected) {
         message(MESSAGE_ERROR, "Error:", " cannot allocate selected paths.");
         return 1;
     }
     const char *password = NULL;
+    int strip_root = 0;
     size_t selected_count = 0;
     int i = 0;
     while (i < count) {
@@ -514,25 +598,33 @@ static int unpack(int count, char **args) {
             ++i;
             break;
         }
-        if (!strcmp(args[i], "--password") && !password && i + 1 < count) {
+        if (!strcmp(args[i], "--strip-root") && !strip_root) {
+            strip_root = 1;
+            ++i;
+        } else if (!strcmp(args[i], "--password") && !password && i + 1 < count) {
             password = args[i + 1];
             i += 2;
         } else if (!strcmp(args[i], "--entry")) {
             if (++i == count) {
                 free(selected);
-                return usage("unpack", 1);
+                return argument_error("unpack", "Missing option value", "--entry");
             }
             selected[selected_count++] = args[i++];
         } else if (args[i][0] == '-') {
             free(selected);
-            return usage("unpack", 1);
+            return argument_error("unpack",
+                                  !strcmp(args[i], "--password") && i + 1 == count
+                                      ? "Missing option value"
+                                      : "Unknown or repeated option",
+                                  args[i]);
         } else
             break;
     }
     int operands = count - i;
     if (operands < 1 || operands > 2) {
         free(selected);
-        return usage("unpack", 1);
+        return argument_error("unpack", operands < 1 ? "Missing archive path" : "Too many operands",
+                              NULL);
     }
     const char *path = args[i];
     char *generated = operands == 1 ? destination_name(path) : NULL;
@@ -543,10 +635,14 @@ static int unpack(int count, char **args) {
         return 1;
     }
     const char *destination = operands == 2 ? args[i + 1] : generated;
-    ArcExtractOptions options = {operands == 1 ? ARC_DESTINATION_NEW : ARC_DESTINATION_MERGE,
-                                 selected, selected_count, password};
+    ArcExtractOptions options = {.destination_mode =
+                                     operands == 1 ? ARC_DESTINATION_NEW : ARC_DESTINATION_MERGE,
+                                 .paths = selected,
+                                 .path_count = selected_count,
+                                 .password = password,
+                                 .strip_root = strip_root};
     ArcResult r = arc_unpack_ex(path, destination, &options);
-    if (!report(r))
+    if (!report_operation(r, "Cannot extract", path, destination))
         message(MESSAGE_SUCCESS, "Extracted to", " %s", destination);
     free(generated);
     free(selected);
@@ -556,21 +652,22 @@ static int unpack(int count, char **args) {
 static int application(int argc, char **argv) {
     setlocale(LC_ALL, "");
     if (argc == 2 && !strcmp(argv[1], "--version")) {
-        printf("arc %s\n", ARC_VERSION);
+        printf("%s %s\n", ARC_PROGRAM_NAME, ARC_VERSION);
         return 0;
     }
     if (argc == 2 && !strcmp(argv[1], "--help"))
         return usage(NULL, 0);
     if (argc < 2)
-        return usage(NULL, 1);
+        return argument_error(NULL, "Missing command", NULL);
     const char *command = argv[1];
     if (!strcmp(command, "pack"))
         return pack(argc - 2, argv + 2);
     if (!strcmp(command, "unpack"))
         return unpack(argc - 2, argv + 2);
     if (strcmp(command, "verify") && strcmp(command, "list") && strcmp(command, "info"))
-        return usage(NULL, 1);
+        return argument_error(NULL, "Unknown command", command);
     int i = 2;
+    int tree = 0;
     ArcReadOptions options = {0};
     while (i < argc && argv[i][0] == '-') {
         if (!strcmp(argv[i], "--help"))
@@ -579,23 +676,35 @@ static int application(int argc, char **argv) {
             ++i;
             break;
         }
+        if (!strcmp(command, "list") && !strcmp(argv[i], "--tree") && !tree) {
+            tree = 1;
+            ++i;
+            continue;
+        }
         if (!strcmp(argv[i], "--password") && !options.password && i + 1 < argc) {
             options.password = argv[i + 1];
             i += 2;
             continue;
         }
-        return usage(command, 1);
+        return argument_error(command,
+                              !strcmp(argv[i], "--password") && i + 1 == argc
+                                  ? "Missing option value"
+                                  : "Unknown or repeated option",
+                              argv[i]);
     }
     int operands = argc - i;
     if (operands < 1 || operands > 1)
-        return usage(command, 1);
+        return argument_error(command, operands < 1 ? "Missing archive path" : "Too many operands",
+                              NULL);
     const char *path = argv[i];
     if (!strcmp(command, "list"))
-        return report(arc_list_ex(path, &options, print_entry, NULL));
+        return report_operation(tree ? list_tree(path, &options)
+                                     : arc_list_ex(path, &options, print_entry, NULL),
+                                "Cannot list", path, NULL);
     if (!strcmp(command, "info")) {
         ArcInfo info;
         ArcResult r = arc_inspect_ex(path, &options, &info);
-        if (report(r))
+        if (report_operation(r, "Cannot inspect", path, NULL))
             return 1;
         printf("Archive bytes: %" PRIu64 "\nContent bytes: %" PRIu64 "\nFiles: %" PRIu64
                "\nDirectories: %" PRIu64 "\nSymbolic links: %" PRIu64 "\nHard links: %" PRIu64 "\n",
@@ -604,7 +713,7 @@ static int application(int argc, char **argv) {
         return ferror(stdout) ? 1 : 0;
     }
     ArcResult r = arc_verify_ex(path, &options);
-    if (!report(r))
+    if (!report_operation(r, "Cannot verify", path, NULL))
         message(MESSAGE_SUCCESS, "Content readable", "; available integrity checks passed.");
     return r.code == ARC_OK ? 0 : 1;
 }

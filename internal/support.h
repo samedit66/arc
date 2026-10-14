@@ -12,12 +12,13 @@ ArcResult ar_from_filekit(FilekitResult result);
 #define ARRAY_COUNT(a) (sizeof(a) / sizeof((a)[0]))
 ArcResult ar_result(ArcCode code, const char *format, ...);
 ArcResult ar_okay(void);
+ArcResult ar_diagnostic(ArcResult result, ArcReason reason, const char *path);
 int ar_failed(ArcResult r);
 /**
- * Retain primary code; append bounded secondary cleanup diagnostics.
+ * Retain primary result; record the first secondary cleanup diagnostic separately.
  *
  * - `primary`: Original operation result whose error takes precedence.
- * - `cleanup`: Secondary cleanup result to append when it fails.
+ * - `cleanup`: Secondary cleanup result to record when it fails.
  */
 ArcResult ar_cleanup(ArcResult primary, ArcResult cleanup);
 ArcResult ar_system_error(const char *operation, const char *path);

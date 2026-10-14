@@ -197,6 +197,8 @@ ArcResult arc_create_impl(const char *path, const ArcOptions *options, ArcWriter
         r = backend_configure_writer(w->backend, options);
     if (!ar_failed(r))
         r = ar_from_filekit(filekit_create_file_exclusive(w->path, 0666, &w->fd));
+    if (r.code == ARC_ALREADY_EXISTS)
+        r = ar_diagnostic(r, ARC_REASON_DESTINATION_EXISTS, path);
     if (!ar_failed(r))
         r = ar_from_filekit(filekit_info(w->path, &w->output));
     if (!ar_failed(r) && archive_write_open_fd(w->backend, w->fd) != ARCHIVE_OK)
@@ -208,8 +210,7 @@ ArcResult arc_create_impl(const char *path, const ArcOptions *options, ArcWriter
             r = ar_cleanup(r, ar_from_filekit(filekit_close(w->fd, w->path)));
             ArcResult cleanup = ar_from_filekit(filekit_remove_file(w->path));
             if (ar_failed(cleanup))
-                cleanup =
-                    ar_result(cleanup.code, "Incomplete output remains: %.200s", cleanup.message);
+                cleanup.partial_output = 1;
             r = ar_cleanup(r, cleanup);
         }
         free(w->path);
@@ -511,11 +512,39 @@ ArcResult release_writer(ArcWriter **owned, int discard) {
     if (discard) {
         ArcResult cleanup = ar_from_filekit(filekit_remove_file(w->path));
         if (ar_failed(cleanup))
-            cleanup = ar_result(cleanup.code, "Incomplete output remains: %.200s", cleanup.message);
+            cleanup.partial_output = 1;
         r = ar_cleanup(r, cleanup);
     }
+    if (!discard && ar_failed(r))
+        r.partial_output = 1;
     free_index(&w->index);
     free(w->path);
     free(w);
+    return r;
+}
+
+/* Keep the output identity until finalization has succeeded or failed. */
+ArcResult arc_finish_pack(ArcWriter **owned) {
+    if (!owned || !*owned)
+        return ar_result(ARC_INVALID_ARGUMENT, "Missing pack writer.");
+    char *path = NULL;
+    FilekitInfo output = (*owned)->output;
+    ArcResult r = ar_copy_string((*owned)->path, &path);
+    if (ar_failed(r))
+        return ar_cleanup(r, arc_discard(owned));
+    r = arc_close(owned);
+    if (ar_failed(r)) {
+        FilekitInfo current = {0};
+        ArcResult cleanup = ar_from_filekit(filekit_info(path, &current));
+        if (!ar_failed(cleanup) && current.exists) {
+            if (filekit_same_identity(output, current))
+                cleanup = ar_from_filekit(filekit_remove_file(path));
+            else
+                cleanup = ar_result(ARC_IO_ERROR, "Output identity changed; cleanup refused.");
+        }
+        r.partial_output = ar_failed(cleanup);
+        r = ar_cleanup(r, cleanup);
+    }
+    free(path);
     return r;
 }

@@ -22,7 +22,7 @@ static ArcResult entry(const ArcEntry *e, void *context) {
         assert(!strcmp(e->path, "value") || !strcmp(e->path, "value2"));
         ++*count;
     }
-    return (ArcResult){ARC_OK, {0}};
+    return (ArcResult){.code = ARC_OK, .message = {0}};
 }
 
 static void check_warc_reader(void) {
@@ -48,8 +48,7 @@ static void check_warc_reader(void) {
     expect_result(arc_inspect("fixture.warc", &info), expected, "fixture inspect");
     if (expected == ARC_OK)
         assert(info.file_count == 2 && info.content_bytes == 14);
-    ArcUnpackOptions unpack = {ARC_DESTINATION_NEW, NULL};
-    expect_result(arc_unpack("fixture.warc", "fixture-out", &unpack), expected, "fixture unpack");
+    expect_result(arc_unpack("fixture.warc", "fixture-out"), expected, "fixture unpack");
 }
 
 static void check_xar_reader(void) {
@@ -89,9 +88,7 @@ static void check_xar_reader(void) {
     expect_result(arc_inspect("fixture.xar", &info), expected, "fixture inspect");
     if (expected == ARC_OK)
         assert(info.file_count == 2 && info.content_bytes == 14);
-    ArcUnpackOptions unpack = {ARC_DESTINATION_NEW, NULL};
-    expect_result(arc_unpack("fixture.xar", "fixture-xar-out", &unpack), expected,
-                  "fixture unpack");
+    expect_result(arc_unpack("fixture.xar", "fixture-xar-out"), expected, "fixture unpack");
 }
 
 int main(void) {
@@ -121,7 +118,10 @@ int main(void) {
             }
             assert(r.code == ARC_OK);
             expect_result(arc_create_ex(path, &options, &writer), ARC_OK, "create");
-            expect_result(arc_add_text(writer, "value", "payload"), ARC_OK, "add text");
+            expect_result(arc_begin_file(writer, "value", 7), ARC_OK, "begin chunk entry");
+            expect_result(arc_write_chunk(writer, "pay", 3), ARC_OK, "first chunk");
+            expect_result(arc_write_chunk(writer, "load", 4), ARC_OK, "second chunk");
+            expect_result(arc_end_file(writer), ARC_OK, "end chunk entry");
             expect_result(arc_add_text(writer, "value2", "payload"), ARC_OK, "add second text");
             expect_result(arc_close(&writer), ARC_OK, "close");
             if (caps & ARC_CAN_LIST) {
@@ -142,8 +142,7 @@ int main(void) {
                     assert(info.file_count == 2 && info.content_bytes == 14);
             }
             if (caps & ARC_CAN_UNPACK) {
-                ArcUnpackOptions unpack = {ARC_DESTINATION_NEW, NULL};
-                expect_result(arc_unpack(path, root, &unpack), ARC_OK, "unpack");
+                expect_result(arc_unpack(path, root), ARC_OK, "unpack");
                 char extracted[128];
                 snprintf(extracted, sizeof extracted, "%s/value", root);
                 FILE *file = fopen(extracted, "rb");

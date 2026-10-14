@@ -25,5 +25,12 @@ int main(void) {
         arc_discard(&writer);
         return 2;
     }
-    return arc_close(&writer).code != ARC_OK;
+    result = arc_close(&writer);
+    if (!arc_ok(result))
+        return 3;
+    result = arc_pack("consumer.tar", "consumer.tar");
+    if (result.code != ARC_ALREADY_EXISTS || result.reason != ARC_REASON_DESTINATION_EXISTS)
+        return 4;
+    result = arc_unpack("consumer.tar", "consumer.tar");
+    return result.code != ARC_ALREADY_EXISTS || result.partial_output;
 }

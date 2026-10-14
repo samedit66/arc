@@ -331,6 +331,8 @@ ArcResult normalized_entry(struct archive *a, struct archive_entry *e) {
 }
 
 ArcResult reader_release(struct archive *a, ArcResult r) {
+    if (!a)
+        return r;
     int status = archive_read_close(a);
     if (status != ARCHIVE_OK)
         r = ar_cleanup(r, backend_error(a, ARC_IO_ERROR));

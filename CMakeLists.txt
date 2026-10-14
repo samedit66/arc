@@ -42,7 +42,7 @@ else()
 endif()
 include(filekit/sources.cmake)
 add_library(arc STATIC
-    arc.c internal/writer.c internal/reader.c internal/unpack.c
+    arc.c internal/pack.c internal/writer.c internal/reader.c internal/unpack.c
     internal/libarchive_adapter.c internal/archive_paths.c internal/support.c
     internal/platform_text_${arc_platform}.c
     ${filekit_sources})
@@ -69,7 +69,7 @@ if(ARC_BUILD_CLI)
 endif()
 if(ARC_BUILD_API_TESTS)
     enable_testing()
-    set(arc_api_tests api api_formats)
+    set(arc_api_tests api api_formats api_cleanup)
     if(WIN32)
         list(APPEND arc_api_tests api_windows_cleanup)
     endif()

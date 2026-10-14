@@ -10,6 +10,7 @@ ArcResult arc_get_capabilities_impl(const ArcOptions *options, unsigned *out);
  */
 ArcResult writer_previous_failure(const ArcWriter *writer);
 ArcResult writer_failure(ArcWriter *writer, ArcResult r);
+ArcResult arc_finish_pack(ArcWriter **writer);
 ArcResult release_writer(ArcWriter **writer, int discard);
 ArcResult arc_create_impl(const char *path, const ArcOptions *options, ArcWriter **out);
 ArcResult arc_begin_file_impl(ArcWriter *writer, const char *path, uint64_t size);

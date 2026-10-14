@@ -14,7 +14,7 @@ extern "C" {
 /** Output archive configuration. AR accepts only flat entry names;
  * 7z requires outer compression "none". */
 typedef struct {
-    /** Non-NULL, case-sensitive Arc format identifier. */
+    /** Non-NULL, case-sensitive arc format identifier. */
     const char *format;
 
     /** Non-NULL outer compression identifier; "none" means no wrapper. */
@@ -58,11 +58,54 @@ typedef enum {
     ARC_PASSWORD_REJECTED
 } ArcCode;
 
-/** Self-contained operation result returned by value. */
+/** Machine-readable diagnostic category; messages are not a parsing interface. */
+typedef enum {
+    ARC_REASON_NONE = 0,
+    ARC_REASON_DESTINATION_EXISTS,
+    ARC_REASON_ENTRY_EXISTS,
+    ARC_REASON_ARCHIVE_CONFLICT,
+    ARC_REASON_UNSAFE_PATH,
+    ARC_REASON_STRIP_ROOT
+} ArcReason;
+
+/** Self-contained operation result returned by value. Path buffers contain UTF-8
+ * when not truncated; truncated paths must only be displayed with an indication.
+ * Recompile consumers when migrating from the original two-field result. */
 typedef struct {
     ArcCode code;
     char message[256];
+    ArcReason reason;
+    char path[1024];
+    int path_truncated;
+    /** Output may remain after a failed modifying operation; no extraction rollback. */
+    int partial_output;
+    /** First secondary cleanup failure; empty if none was recorded. */
+    char cleanup_message[256];
 } ArcResult;
+
+/** Nonzero exactly when result.code is ARC_OK. */
+int arc_ok(ArcResult result);
+
+/** Whole-operation packing options. NULL configuration infers the output suffix. */
+typedef struct {
+    const ArcOptions *configuration;
+    /** Valid only for a single actual directory. */
+    int keep_root;
+} ArcPackOptions;
+
+/** Pack one filesystem source. A directory contributes its contents; a file or
+ * link retains its basename. Infer encoding from the output suffix. Never
+ * overwrite. On failure remove the newly created output where possible;
+ * cleanup_message and partial_output report cleanup failures. */
+ArcResult arc_pack(const char *archive_path, const char *source_path);
+
+/** Pack explicit sources; count must be positive. Multiple sources retain their
+ * basenames. Does not follow symbolic links or consult ignore files. Sources
+ * must remain unchanged; concurrent cwd/output replacement is unsupported.
+ * NULL options uses defaults. Configuration, when supplied, ignores suffix.
+ * Source strings and options are borrowed only for the call. */
+ArcResult arc_pack_ex(const char *archive_path, const char *const *sources, size_t count,
+                      const ArcPackOptions *options);
 
 /** Statistics for a completed archive file. */
 typedef struct {
@@ -113,13 +156,7 @@ typedef struct {
 /** Root creation policy; neither mode permits file overwrites. */
 typedef enum { ARC_DESTINATION_NEW, ARC_DESTINATION_MERGE } ArcDestinationMode;
 
-typedef struct {
-    ArcDestinationMode destination_mode;
-    /** Nonempty UTF-8 password borrowed for the call; NULL means none. */
-    const char *password;
-} ArcUnpackOptions;
-
-/** Extended extraction configuration; existing unpack options remain unchanged. */
+/** Extended extraction configuration. */
 typedef struct {
     ArcDestinationMode destination_mode;
     /** Borrowed UTF-8 relative archive paths; each includes its subtree. */
@@ -128,6 +165,13 @@ typedef struct {
     size_t path_count;
     /** Nonempty UTF-8 password borrowed for the call; NULL means none. */
     const char *password;
+    /** Remove the single common root directory. Preflight all entry names before
+     * creating the destination; reject empty/mixed-root archives and root files.
+     * Selectors refer to original paths. Hard-link paths are transformed;
+     * relative symlink text is preserved and validated in the new destination.
+     * Links escaping the stripped tree are rejected. Root metadata is omitted.
+     * Requires a second metadata pass; compressed input may be decompressed twice. */
+    int strip_root;
 } ArcExtractOptions;
 
 /** Password is copied by the backend during opening. Empty or invalid UTF-8
@@ -324,6 +368,9 @@ ArcResult arc_begin_file(ArcWriter *writer, const char *entry_path, uint64_t siz
  * - `size`: Number of bytes to write; must not exceed the remaining size.
  *
  * Success means the complete chunk was accepted. No data pointer is retained.
+ * The exact final size is required by begin_file. Backend/format buffering and
+ * temporary storage remain possible: chunk acceptance does not promise bounded
+ * total memory or pipe/callback output. Unsupported writes return UNSUPPORTED.
  * Failure may follow partial backend output and invalidates the writer.
  *
  * Example (writer has an open entry with at least sizeof data bytes remaining):
@@ -357,8 +404,8 @@ ArcResult arc_end_file(ArcWriter *writer);
  *
  * Reports unfinished entries, prior failures and finalization errors.
  * A failed close may leave an incomplete file; no writer remains for retry.
- * Its code preserves the first failure; secondary cleanup diagnostics may be
- * appended within the fixed message capacity.
+ * Its code preserves the first failure; secondary cleanup diagnostics are
+ * retained separately in cleanup_message.
  *
  * Example (writer is an owned ArcWriter * or NULL):
  * ```c
@@ -391,8 +438,8 @@ ArcResult arc_discard(ArcWriter **writer);
  *
  * - `archive_path`: Non-NULL UTF-8 input path; input must remain unchanged.
  * - `destination`: Non-NULL UTF-8 directory path; parent must exist.
- * - `options`: Non-NULL root policy: NEW requires atomic directory creation;
- *          MERGE creates a missing directory or reuses an actual directory.
+ * Requires atomic creation of a new destination directory. Use arc_unpack_ex
+ * to merge directories, select paths, strip the root or supply a password.
  *
  * Detects format from content. Supports ordinary files, directories and
  * permitted symbolic/hard links. Rejects
@@ -405,12 +452,10 @@ ArcResult arc_discard(ArcWriter **writer);
  *
  * Example:
  * ```c
- * ArcUnpackOptions options = {.destination_mode = ARC_DESTINATION_NEW};
- * ArcResult result = arc_unpack("backup.tar", "restored", &options);
+ * ArcResult result = arc_unpack("backup.tar", "restored");
  * ```
  */
-ArcResult arc_unpack(const char *archive_path, const char *destination,
-                     const ArcUnpackOptions *options);
+ArcResult arc_unpack(const char *archive_path, const char *destination);
 
 /**
  * Extract selected archive paths without overwriting existing objects.
@@ -426,7 +471,8 @@ ArcResult arc_unpack(const char *archive_path, const char *destination,
  * A selected hard link requires its complete target chain in the selection;
  * an absent target returns SELECTION_ERROR. Symlink targets are not added
  * implicitly; safe dangling links follow the existing platform restrictions.
- * Unselected paths/types are not extraction-validated; unreadable headers,
+ * Without strip_root, unselected paths/types are not extraction-validated;
+ * strip_root checks every entry name during preflight. Unreadable headers,
  * names or skipped data can still fail the operation. Encrypted selected
  * entries use the password where supported. Skipping does not verify unselected content.
  * All ordinary unpack guarantees apply. Failure may leave partial output,

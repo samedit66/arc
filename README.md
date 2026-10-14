@@ -1,8 +1,10 @@
 <div align="center">
 
-# Ꭿrc
+# arc
 
-The friendly C11 archive library and CLI you’ve always wanted.
+Archives, made simple.
+
+A human-centered C11 library and CLI for everyday archive tasks.
 
 </div>
 
@@ -55,6 +57,8 @@ Start with the everyday stuff:
 arc unpack project.zip ./restored      # choose a destination
 
 arc list project.zip   # see what’s inside
+arc list --tree project.zip # see the directory structure
+arc unpack --strip-root project.zip ./flat # remove one common root directory
 arc info project.zip   # see sizes and entry counts
 arc verify project.zip # check content integrity where supported
 ```
@@ -77,35 +81,33 @@ see [embedding instructions](docs/build.md#embedding-the-library) for source,
 installed-package and pkg-config integration.
 Operations return an `ArcResult` with an error code and a short diagnostic.
 
-Here’s a complete example that creates an archive with a text file inside:
+Pack a directory, extract an archive or verify its contents with one call:
 
 ```c
 #include "arc.h"
 #include <stdio.h>
 
 int main(void) {
-    ArcWriter *writer = NULL;
-    ArcResult result = arc_create("hello.tar.gz", &writer);
-    if (result.code != ARC_OK) {
+    ArcResult result = arc_pack("backup.tar.gz", "./backup");
+    if (!arc_ok(result)) {
+        fprintf(stderr, "%s\n", result.message);
+        if (*result.cleanup_message)
+            fprintf(stderr, "Cleanup: %s\n", result.cleanup_message);
+        return 1;
+    }
+    result = arc_unpack("backup.tar.gz", "./restored");
+    if (!arc_ok(result)) {
         fprintf(stderr, "%s\n", result.message);
         return 1;
     }
-
-    result = arc_add_text(writer, "hello.txt", "Hello!\n");
-    if (result.code != ARC_OK) {
-        fprintf(stderr, "%s\n", result.message);
-        ArcResult cleanup = arc_discard(&writer);
-        if (cleanup.code != ARC_OK)
-            fprintf(stderr, "%s\n", cleanup.message);
-        return 1;
-    }
-
-    result = arc_close(&writer);
-    if (result.code != ARC_OK)
-        fprintf(stderr, "%s\n", result.message);
-    return result.code != ARC_OK;
+    return !arc_ok(arc_verify("backup.tar.gz"));
 }
 ```
+
+`arc_unpack` requires a new destination. Use `arc_unpack_ex` for an existing
+directory, selected entries, a password or root stripping. Existing files and
+links are never overwritten. Writer/reader APIs remain available for generated
+text, binary chunks and incremental reading.
 
 See the [tutorial](docs/tutorial.md#use-it-from-c) for more examples and the
 header for full API contracts.
