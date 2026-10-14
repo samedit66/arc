@@ -1,0 +1,10 @@
+tool,run,files,format,maximum_resident_bytes
+before,1,20000,tar,43171840.0
+before,2,20000,tar,43188224.0
+before,3,20000,tar,43122688.0
+after,1,20000,tar,7536640.0
+after,2,20000,tar,7503872.0
+after,3,20000,tar,7520256.0
+ouch,1,20000,tar,3964928.0
+ouch,2,20000,tar,3915776.0
+ouch,3,20000,tar,3915776.0

@@ -14,7 +14,8 @@
 
 typedef struct {
     char *name, *target, *resolved;
-    struct archive_entry *metadata;
+    ArchiveMetadata metadata;
+    int metadata_set;
     ArcEntryType type;
     int created, resolving, resolved_kind, link_kind;
 #ifdef _WIN32
@@ -98,7 +99,6 @@ static void free_index(ExtractIndex *index) {
         free(p->name);
         free(p->target);
         free(p->resolved);
-        archive_entry_free(p->metadata);
     }
     free(index->items);
     archive_paths_free(&index->paths);
@@ -134,9 +134,7 @@ static ArcResult append_item(ExtractIndex *index, const char *name, ArcEntryType
     return ar_okay();
 }
 
-static ArcResult apply_entry_metadata(const char *path, struct archive_entry *entry,
-                                      int directory) {
-    ArchiveMetadata metadata = backend_file_metadata(entry);
+static ArcResult apply_entry_metadata(const char *path, ArchiveMetadata metadata, int directory) {
 #ifndef _WIN32
     if (directory) {
         ArcResult r = ar_from_fs(arc_fs_restrict_permissions(path, metadata.mode));
@@ -244,12 +242,9 @@ static ArcResult parents(ExtractIndex *index, const char *root, const char *name
     return r;
 }
 
-static int metadata_equal(struct archive_entry *a, struct archive_entry *b) {
-    return (archive_entry_perm(a) & 0777) == (archive_entry_perm(b) & 0777) &&
-           archive_entry_mtime_is_set(a) == archive_entry_mtime_is_set(b) &&
-           (!archive_entry_mtime_is_set(a) ||
-            (archive_entry_mtime(a) == archive_entry_mtime(b) &&
-             archive_entry_mtime_nsec(a) == archive_entry_mtime_nsec(b)));
+static int metadata_equal(ArchiveMetadata a, ArchiveMetadata b) {
+    return a.mode == b.mode && a.mtime_set == b.mtime_set &&
+           (!a.mtime_set || (a.mtime == b.mtime && a.mtime_nsec == b.mtime_nsec));
 }
 
 static ArcResult hard_links(ExtractIndex *index, const char *root, int selective) {
@@ -500,7 +495,8 @@ static ArcResult extract_entry(ExtractIndex *index, const char *root, struct arc
         r = directory(index, root, name);
         if (!ar_failed(r))
             r = find_item(index, name, &p);
-        if (!ar_failed(r) && p->metadata && !metadata_equal(p->metadata, e))
+        if (!ar_failed(r) && p->metadata_set &&
+            !metadata_equal(p->metadata, backend_file_metadata(e)))
             r = ar_result(ARC_INVALID_ARCHIVE, "Conflicting directory metadata '%s'.", name);
     } else if (!ar_failed(r)) {
         ArcFsInfo before = {0};
@@ -513,12 +509,9 @@ static ArcResult extract_entry(ExtractIndex *index, const char *root, struct arc
                 ar_result(ARC_ALREADY_EXISTS, "An entry already exists at the destination."),
                 ARC_REASON_ENTRY_EXISTS, full);
     }
-    if (!ar_failed(r) && !p->metadata) {
-        p->metadata = archive_entry_clone(e);
-        if (!p->metadata)
-            r = ar_result(ARC_OUT_OF_MEMORY, "Cannot retain entry metadata.");
-        else
-            clean_metadata(p->metadata);
+    if (!ar_failed(r) && !p->metadata_set) {
+        p->metadata = backend_file_metadata(e);
+        p->metadata_set = 1;
     }
     if (!ar_failed(r) && (type == ARC_ENTRY_SYMBOLIC_LINK || type == ARC_ENTRY_HARD_LINK)) {
         char *target = NULL;
@@ -559,7 +552,7 @@ static ArcResult extract_entry(ExtractIndex *index, const char *root, struct arc
                 r = ar_result(ARC_INVALID_ARCHIVE, "Extracted size mismatch '%s'.", name);
             r = ar_cleanup(r, ar_from_fs(arc_fs_close(fd, full)));
             if (!ar_failed(r))
-                r = apply_entry_metadata(full, e, 0);
+                r = apply_entry_metadata(full, backend_file_metadata(e), 0);
         }
     }
     free(raw);
@@ -748,7 +741,7 @@ ArcResult arc_unpack_impl(const char *path, const char *root, const ArcExtractOp
     /* Children were indexed after parents; finalize new directories in reverse. */
     for (size_t i = index.count; i && !ar_failed(r); --i) {
         ExtractItem *p = &index.items[i - 1];
-        if (p->type != ARC_ENTRY_DIRECTORY || !p->created || !p->metadata)
+        if (p->type != ARC_ENTRY_DIRECTORY || !p->created || !p->metadata_set)
             continue;
         char *full = NULL;
         r = ar_join(root, p->name, &full);

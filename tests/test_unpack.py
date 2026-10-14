@@ -303,3 +303,30 @@ def test_conflicting_hardlink_metadata_is_rejected(arc, make_tar, conflict):
     archive = make_tar([target, alias])
     result = arc("unpack", archive, "output", success=False)
     assert "Conflicting hard-link metadata" in result.stderr
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows timestamps have 100 ns precision")
+def test_file_and_directory_mtime_nanoseconds_are_restored(arc, make_tar, tmp_path):
+    directory = directory_entry("sub", mode=0o750)
+    ordinary = file_entry("sub/value", b"data", mode=0o640)
+    directory[0].pax_headers["mtime"] = "1700000000.123456789"
+    ordinary[0].pax_headers["mtime"] = "1700000001.987654321"
+    archive = make_tar([directory, ordinary])
+    arc("unpack", archive, "output")
+    assert (tmp_path / "output/sub").stat().st_mtime_ns == 1700000000123456789
+    assert (tmp_path / "output/sub/value").stat().st_mtime_ns == 1700000001987654321
+    assert stat.S_IMODE((tmp_path / "output/sub").stat().st_mode) == 0o750
+    assert stat.S_IMODE((tmp_path / "output/sub/value").stat().st_mode) == 0o640
+
+
+@pytest.mark.parametrize("conflict", ["mode", "mtime"])
+def test_conflicting_directory_metadata_is_rejected(arc, make_tar, conflict):
+    first = directory_entry("sub")
+    repeated = directory_entry("sub")
+    if conflict == "mode":
+        repeated[0].mode ^= 0o100
+    else:
+        repeated[0].pax_headers["mtime"] = "0.000000001"
+    archive = make_tar([first, file_entry("sub/value"), repeated])
+    result = arc("unpack", archive, "output", success=False)
+    assert "Conflicting directory metadata" in result.stderr

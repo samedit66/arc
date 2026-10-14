@@ -306,6 +306,13 @@ plotting, not for building Arc or running either benchmark:
 mise exec -- uv run --no-project --python 3.13.15 --with matplotlib==3.11.2 python scripts/plot-bench.py
 ```
 
+For ZIP backend comparisons, `scripts/bench-zip.py` accepts multiple Arc builds
+and an optional libarchive-only probe, checks generated payloads and compares
+native versus explicit UTC environments on the same extraction input.
+See the [performance experiments](performance-experiment.md) for results,
+probe compilation and invocation. Benchmark JSON metadata records `TZ` so
+timezone-sensitive ZIP measurements can be interpreted.
+
 `mise run format` formats the C sources. `mise run check` builds the project,
 runs the CLI tests and checks C formatting; both formatting tasks require
 clang-format. See [the test guide](../tests/README.md) for focused runs,

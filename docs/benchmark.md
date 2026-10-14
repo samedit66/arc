@@ -15,6 +15,9 @@ The synthetic fixtures below were measured together in one run. A separate
 run on upstream ouch's Rust workloads is reported later in this document.
 Earlier two-tool results were exploratory and are superseded by these tables.
 These are observations from one machine, not portable performance guarantees.
+These snapshots precede the compact extraction-metadata change. See the
+[performance experiments](performance-experiment.md) for the follow-up:
+ZIP backend isolation, timezone effects, zlib-ng and reduced extraction memory.
 
 ## Reproduce
 

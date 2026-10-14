@@ -12,7 +12,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 
-COLORS = {"arc": "#2563eb", "ouch": "#f59e0b", "tar": "#64748b", "zip": "#64748b"}
+COLORS = {"arc": "#2563eb", "ouch": "#f59e0b", "tar": "#64748b", "zip": "#64748b",
+          "before": "#64748b", "after": "#2563eb", "experimental": "#0ea5e9"}
 
 
 def draw_bars(axis, labels: list[str], values: list[float], tools: tuple[str, ...],
@@ -49,10 +50,41 @@ def main() -> None:
     parser.add_argument("--synthetic", type=Path, default=Path("docs/benchmark-results.csv"))
     parser.add_argument("--rust", type=Path, default=Path("docs/benchmark-ouch-results.csv"))
     parser.add_argument("--output", type=Path, default=Path("docs/assets/benchmark"))
+    parser.add_argument("--zip-experiment", type=Path, help="render only the ZIP experiment summary")
+    parser.add_argument("--memory-experiment", type=Path,
+                        default=Path("docs/benchmark-memory-results.csv"))
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 10,
                          "svg.fonttype": "none", "axes.titleweight": "bold"})
+    if args.zip_experiment:
+        with args.zip_experiment.open(newline="") as stream:
+            experiments = list(csv.DictReader(stream))
+        with args.memory_experiment.open(newline="") as stream:
+            memory = list(csv.DictReader(stream))
+        figure, axes = plt.subplots(2, 2, figsize=(11, 7), layout="constrained")
+        figure.suptitle("Performance experiments · macOS ARM64\nMedians · lower is better", fontsize=16)
+        for axis, environment in zip(axes[0], ("default", "utc")):
+            tools = ("arc", "ouch")
+            values = [statistics.median(float(row["seconds"]) * 1000 for row in experiments
+                      if (row["environment"], row["dataset"], row["operation"], row["tool"])
+                      == (environment, "small", "unpack", tool)) for tool in tools]
+            draw_bars(axis, ["Arc", "ouch"], values, tools, "milliseconds")
+            axis.set_title("2,000-file ZIP extraction / " + ("native timezone" if environment == "default" else "TZ=UTC0"))
+        tools = ("arc", "experimental", "ouch")
+        values = [statistics.median(float(row["seconds"]) * 1000 for row in experiments
+                  if (row["environment"], row["dataset"], row["operation"], row["tool"])
+                  == ("default", "text", "pack", tool)) for tool in tools]
+        draw_bars(axes[1, 0], ["Arc", "Arc + zlib-ng", "ouch"], values, tools, "milliseconds")
+        axes[1, 0].set_title("16 MiB repeated text / ZIP packing")
+        tools = ("before", "after", "ouch")
+        values = [statistics.median(float(row["maximum_resident_bytes"]) / 1048576
+                  for row in memory if row["tool"] == tool) for tool in tools]
+        draw_bars(axes[1, 1], ["Arc before", "Arc after", "ouch"], values, tools, "MiB")
+        axes[1, 1].set_title("20,000-file TAR extraction / peak RSS")
+        save_chart(figure, args.output, "zip-experiment")
+        print(f"Experiment summary saved in {args.output}.")
+        return
     with args.synthetic.open(newline="") as stream:
         synthetic = list(csv.DictReader(stream))
     for operation in ("pack", "unpack"):

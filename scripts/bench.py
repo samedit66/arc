@@ -110,6 +110,7 @@ def main() -> None:
         "fixture_version": 1, "seed": args.seed, "size_mib": args.size_mib,
         "small_files": args.small_files, "runs": args.runs,
         "platform": platform.platform(), "python": platform.python_version(),
+        "timezone": os.environ.get("TZ"),
         "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
         "tool_order": "rotate starting tool each iteration",
         "executables": executables,

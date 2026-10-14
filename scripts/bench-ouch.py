@@ -4,6 +4,7 @@
 import argparse
 import csv
 import json
+import os
 from pathlib import Path
 import platform
 import shlex
@@ -47,7 +48,8 @@ def main() -> None:
     output.mkdir(parents=True, exist_ok=True)
     rows = []
     measurements = []
-    metadata = {"platform": platform.platform(), "runs": args.runs, "warmups": 4,
+    metadata = {"platform": platform.platform(), "timezone": os.environ.get("TZ"),
+                "runs": args.runs, "warmups": 4,
                 "source_tag": "1.65.0", "executables": executables,
                 "versions": {name: subprocess.run([path, "--version"], capture_output=True,
                              text=True).stdout for name, path in executables.items()
