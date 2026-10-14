@@ -116,11 +116,18 @@ With the [build prerequisites](docs/install.md#prerequisites) installed,
 run from the repository root:
 
 ```sh
+git clone https://github.com/samedit66/arc
+cd arc
 mise trust
 mise install
 mise run build
+mise run test
 mise run run -- --help
 ```
+
+Mise runs CMake/Ninja; development outputs are in `build/dev`.
+`mise run release` builds a native Release binary with pinned vcpkg dependencies;
+`mise run dist` tests it and creates a distributable archive.
 
 See [Building arc](docs/build.md) for build settings, Windows setup and linking
 the library into your application.

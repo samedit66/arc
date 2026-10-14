@@ -114,11 +114,13 @@ build_source() {
         unset ARC_BUILD_CONFIG ARC_PLATFORM ARC_EXE_SUFFIX ARC_CFLAGS ARC_LDFLAGS
         unset ARC_SANITIZER_FLAGS FILEKIT_SANITIZER_FLAGS
         export ARC_VERSION=$version ARC_BUILD_DIR=$work/build
-        export ARC_SANITIZE=0 FILEKIT_SANITIZE=0 MISE_DISABLE_TOOLS=python,uv
+        export ARC_SANITIZE=0 FILEKIT_SANITIZE=0 MISE_DISABLE_TOOLS=python,uv,pipx:clang-format
         # Installing explicitly trusts its build scripts and mise config.
         mise trust </dev/null
+        mise install </dev/null
         mise exec -- sh -c '
-            command -v "$CC" >/dev/null 2>&1 || { echo "Missing C compiler: $CC" >&2; exit 1; }
+            compiler=${CC:-cc}
+            command -v "$compiler" >/dev/null 2>&1 || { echo "Missing C compiler: $compiler" >&2; exit 1; }
             pkg-config --exists libarchive || { echo "Missing libarchive development files; see docs/build.md" >&2; exit 1; }
             exec bash scripts/build.sh
         ' </dev/null

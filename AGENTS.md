@@ -40,10 +40,13 @@ Run commands from the repository root.
 Prerequisites: mise, Git, Bash, a C11 compiler, ar, pkg-config, and
 libarchive development files. Formatting requires clang-format.
 Consumer integration checks require CMake and C/C++ compilers.
-Python and uv are managed by mise for development tooling.
+CMake, Ninja, Python, uv and clang-format are pinned by mise for development tooling.
 
 - Setup: `mise trust`, then `mise install`.
+- Configure when needed: `mise run configure`.
 - Build: `mise run build`.
+- Native static Release: `mise run release`.
+- Tested distribution: `mise run dist`.
 - Run: `mise run run -- --help`.
 - CLI and public C API tests: `mise run test`.
 - Focused tests: `mise run test -- -k selection`.
@@ -54,7 +57,7 @@ Python and uv are managed by mise for development tooling.
 - ASan/UBSan on macOS or Linux:
   `ARC_SANITIZE=1 CC=clang ARC_BUILD_DIR=/tmp/arc-sanitize mise run test`.
 
-Build output defaults to a temporary directory; use ARC_BUILD_DIR
+Development output defaults to build/dev (build/sanitize for sanitizers); use ARC_BUILD_DIR
 to override it. Test tasks build first and use the resulting executable.
 Do not run pytest directly or bypass the build dependency with --skip-deps.
 

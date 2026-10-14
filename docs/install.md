@@ -84,11 +84,12 @@ causes installation to fail, preserving the previous executable.
 
 Source builds require Git, Bash, mise, a C11 compiler, ar, pkg-config and
 libarchive development files. They run `mise trust` on the downloaded source.
-Python and uv are not required. For macOS prerequisites, use Homebrew:
+CMake and Ninja are installed at their pinned versions through mise.
+Python, uv and clang-format are not required by source installation. For macOS prerequisites, use Homebrew:
 
 ```sh
 xcode-select --install
-brew install git libarchive pkgconf mise cmake
+brew install git libarchive pkgconf mise
 ```
 
 On Debian / Ubuntu:

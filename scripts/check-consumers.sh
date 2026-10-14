@@ -2,6 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 root="$PWD"
+export CMAKE_GENERATOR=${CMAKE_GENERATOR:-Ninja}
 if [[ "$(uname -s)" == Darwin ]]; then
     export CMAKE_PREFIX_PATH="$(brew --prefix libarchive)${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
 fi

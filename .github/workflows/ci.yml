@@ -51,12 +51,11 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc clang libarchive-dev pkg-config python3 cmake g++
+          sudo apt-get install -y gcc clang libarchive-dev pkg-config g++
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: |
-          brew install libarchive pkgconf llvm cmake
-          printf '%s/bin\n' "$(brew --prefix llvm)" >> "$GITHUB_PATH"
+          brew install libarchive pkgconf
       - name: Install Windows UCRT64 dependencies
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
@@ -68,26 +67,15 @@ jobs:
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-libarchive
             mingw-w64-ucrt-x86_64-pkgconf
-            mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-ninja
       - name: Select MSYS2 Bash for mise tasks
         if: runner.os == 'Windows'
         run: printf 'MISE_BASH_PATH=%s\n' "$(cygpath -m /usr/bin/bash)" >> "$GITHUB_ENV"
-      - name: Install mise and pinned Python/uv
+      - name: Install mise and pinned development tools
         uses: jdx/mise-action@v4
         with:
           version: 2026.9.1
-      - name: Formatting (canonical macOS LLVM toolchain)
-        if: runner.os == 'macOS'
-        run: mise run format-check
-      - name: Build and regression checks
-        run: mise run test
-      - name: External C and C++ consumers
-        run: |
-          if [[ "$RUNNER_OS" == Windows ]]; then export CMAKE_GENERATOR=Ninja; fi
-          mise exec -- bash scripts/check-consumers.sh
-      - name: Independent filekit checks
-        run: mise run filekit:verify
+      - name: Build, tests, formatting and consumer checks
+        run: mise run check
       - name: Address and undefined-behavior sanitizers
         if: runner.os != 'Windows'
         env:
@@ -110,10 +98,10 @@ jobs:
             target: linux-arm64
             shell: bash
           - os: macos-15-intel
-            target: darwin-x86_64
+            target: macos-x86_64
             shell: bash
           - os: macos-15
-            target: darwin-arm64
+            target: macos-arm64
             shell: bash
           - os: windows-latest
             target: windows-x86_64
@@ -131,10 +119,10 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential musl-tools linux-libc-dev cmake ninja-build pkg-config curl zip unzip autoconf automake libtool
+          sudo apt-get install -y build-essential musl-tools linux-libc-dev pkg-config curl zip unzip autoconf automake libtool
       - name: Install macOS binary build tools
         if: runner.os == 'macOS'
-        run: brew install cmake ninja pkgconf autoconf automake libtool
+        run: brew install pkgconf autoconf automake libtool
       - name: Install Windows binary build tools
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
@@ -145,8 +133,6 @@ jobs:
           install: >-
             git zip unzip autoconf automake libtool make perl
             mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-pkgconf
       - name: Select Windows Bash
         if: runner.os == 'Windows'
@@ -164,14 +150,10 @@ jobs:
           if command -v cygpath >/dev/null 2>&1; then release_temp=$(cygpath -m "$RUNNER_TEMP"); fi
           mkdir -p "$release_temp/vcpkg-cache"
           printf 'ARC_RELEASE_BUILD_DIR=%s/arc-release\nVCPKG_DEFAULT_BINARY_CACHE=%s/vcpkg-cache\n' "$release_temp" "$release_temp" >> "$GITHUB_ENV"
-      - name: Build and inspect static binary
+      - name: Build, inspect, test and package native release
         env:
           RELEASE_TARGET: ${{ matrix.target }}
-        run: bash scripts/build-release.sh "$RELEASE_TARGET"
-      - name: Test packaged binary and public API
-        env:
-          RELEASE_TARGET: ${{ matrix.target }}
-        run: mise run test-release -- "$RELEASE_TARGET"
+        run: mise run dist
       - name: Save failed binary build diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

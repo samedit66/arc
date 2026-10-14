@@ -5,3 +5,6 @@ __pycache__/
 *.a
 /arc
 /arc.exe
+
+/build/
+/filekit/build/

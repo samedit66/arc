@@ -1,22 +1,27 @@
-# Build policy is shared by build, test, run and their dependencies.
+# Use the platform toolchain; explicit CC/CXX always take precedence.
 [env]
-ARC_BUILD_CONFIG = "1"
 CC = "{% if env.CC is defined and env.CC != '' %}{{ env.CC }}{% elif os() == 'macos' %}clang{% else %}gcc{% endif %}"
-AR = "{{ env.AR | default(value='ar') }}"
-ARC_PLATFORM = "{% if os() == 'windows' %}windows{% else %}unix{% endif %}"
-ARC_EXE_SUFFIX = "{% if os() == 'windows' %}.exe{% endif %}"
-ARC_CFLAGS = "-std=c11 -D_FILE_OFFSET_BITS=64 -Wall -Wextra -Wpedantic -Werror"
-ARC_LDFLAGS = "{% if os() == 'windows' %}-municode{% endif %}"
-ARC_SANITIZER_FLAGS = "{% if env.ARC_SANITIZE | default(value='0') == '1' %}-fsanitize=address,undefined -fno-omit-frame-pointer -g{% endif %}"
-FILEKIT_SANITIZER_FLAGS = "{% if env.ARC_SANITIZE | default(value=env.FILEKIT_SANITIZE | default(value='0')) == '1' %}-fsanitize=address,undefined -fno-omit-frame-pointer -g{% endif %}"
-PKG_CONFIG_PATH = "{% if os() == 'macos' %}{{ exec(command='brew --prefix libarchive') }}/lib/pkgconfig{% if env.PKG_CONFIG_PATH is defined and env.PKG_CONFIG_PATH != '' %}:{{ env.PKG_CONFIG_PATH }}{% endif %}{% else %}{{ env.PKG_CONFIG_PATH | default(value='') }}{% endif %}"
+CXX = "{% if env.CXX is defined and env.CXX != '' %}{{ env.CXX }}{% elif os() == 'macos' %}clang++{% else %}g++{% endif %}"
+
+[settings]
+pipx.uvx = true
 
 [tools]
+cmake = "4.4.4"
+ninja = "1.13.2"
+"pipx:clang-format" = "22.1.8"
 python = "3.13.15"
 uv = "0.12.24"
 
+[tasks.configure]
+description = "Configure CMake dev (or ARC_CMAKE_PRESET) when needed"
+shell = "bash -euo pipefail -c"
+run = "bash scripts/configure.sh"
+dir = "{{config_root}}"
+
 [tasks.build]
-description = "Build arc outside the source tree"
+description = "Incrementally build the CMake dev configuration"
+depends = ["configure"]
 shell = "bash -euo pipefail -c"
 run = "bash scripts/build.sh"
 dir = "{{config_root}}"
@@ -40,7 +45,7 @@ dir = "{{config_root}}"
 
 [tasks.check]
 description = "Build and test arc, then check C formatting"
-depends = ["test"]
+depends = ["test", "filekit:verify", "consumers"]
 shell = "bash -euo pipefail -c"
 run = "bash scripts/format.sh --check"
 dir = "{{config_root}}"
@@ -75,4 +80,23 @@ description = "Run filekit's independent API and build checks"
 depends = ["filekit:build"]
 shell = "bash -euo pipefail -c"
 run = "python filekit/verify.py"
+dir = "{{config_root}}"
+
+[tasks.consumers]
+description = "Check source, installed CMake and pkg-config consumers"
+shell = "bash -euo pipefail -c"
+run = "bash scripts/check-consumers.sh"
+dir = "{{config_root}}"
+
+[tasks.release]
+description = "Build Release with pinned vcpkg dependencies for the host"
+shell = "bash -euo pipefail -c"
+run = "bash scripts/build-release.sh"
+dir = "{{config_root}}"
+
+[tasks.dist]
+description = "Test and package the host release"
+depends = ["release"]
+shell = "bash -euo pipefail -c"
+run = "bash scripts/test-release.sh && bash scripts/package-release.sh"
 dir = "{{config_root}}"

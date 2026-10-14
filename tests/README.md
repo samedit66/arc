@@ -25,10 +25,11 @@ replacing downloads with local fixtures. It tests source builds through MSYS2
 and native binary installation without MSYS2, checksum failures, package
 validation, preservation of old executables, environment restoration and cleanup.
 
-Before pytest, `scripts/check-api.sh` compiles and runs `tests/api.c` against
+Before pytest, CTest runs the CMake-built `tests/api.c` against
 the freshly built static library. It checks public writer/reader states, chunk
 sizes, EOF, skip, handle consumption and capability output contracts, including
-sanitizer instrumentation when enabled. `api_formats.c` checks the named writer
+sanitizer instrumentation when enabled. Compilation and linking are defined only
+in CMake. `api_formats.c` checks the named writer
 formats against every named outer filter: unavailable configurations create no
 output, and advertised list/inspect/verify/unpack operations preserve file data.
 On Windows, `api_windows_cleanup.c` substitutes descriptor allocation and
@@ -43,9 +44,9 @@ access and does not publish releases.
 
 `ARC_RELEASE_BUILD_DIR=/tmp/arc-release mise run test-release -- TARGET` runs
 CMake's API tests and this complete Python suite against a previously built
-release binary. It does not rebuild against system dependencies; use
-`scripts/build-release.sh TARGET` first. CI runs this for each of the five
-release targets, then packages only successfully tested builds.
+release binary. It does not rebuild or package; use
+`mise run release` first (with the same `RELEASE_TARGET` and output directory).
+CI uses `mise run dist` for all five targets to build, test and package in order.
 
 The Python suite treats arc as a black box: it invokes the executable and checks exit
 status, output, archives and filesystem effects. The Python environment lives
@@ -53,7 +54,8 @@ in `tests/.venv`; dependencies are declared in `pyproject.toml` and pinned in
 `uv.lock`. uv installs the locked dependencies on first use.
 
 `mise run verify` is an alias for the build-and-test task. `mise run check` also
-checks C formatting and requires clang-format. For an ASan/UBSan run on macOS
+checks formatting, independent filekit and external consumers. Mise supplies
+the pinned clang-format. For an ASan/UBSan run on macOS
 or Linux (mise preserves the explicit compiler and output directory):
 
 ```sh

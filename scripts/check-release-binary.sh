@@ -14,8 +14,9 @@ case "$1" in
         if [[ "$headers" == *INTERP* || "$dynamic" == *NEEDED* ]]; then
             echo 'Linux release binary is dynamically linked.' >&2; exit 1
         fi ;;
-    darwin-x86_64|darwin-arm64)
-        [[ "$(lipo -archs "$2")" == "${1#darwin-}" ]] || { echo 'Wrong macOS binary architecture' >&2; exit 1; }
+    darwin-x86_64|darwin-arm64|macos-x86_64|macos-arm64)
+        architecture=${1#*-}
+        [[ "$(lipo -archs "$2")" == "$architecture" ]] || { echo 'Wrong macOS binary architecture' >&2; exit 1; }
         dependencies=$(otool -L "$2" | tail -n +2 | awk '{print $1}')
         while IFS= read -r library; do
             case "$library" in

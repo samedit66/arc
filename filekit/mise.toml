@@ -1,3 +1,8 @@
+[tools]
+cmake = "4.4.4"
+ninja = "1.13.2"
+python = "3.13.15"
+
 [tasks.build]
 shell = "bash -euo pipefail -c"
 run = "bash build.sh"

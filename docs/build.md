@@ -3,46 +3,109 @@
 Run the following commands from the repository root.
 
 The project targets macOS, Linux and Windows through MSYS2 UCRT64.
-The mise build requires Git, mise, Bash, a C11 compiler, `ar`, pkg-config and
-libarchive development files. For platform setup, see the
-[installation prerequisites](install.md#prerequisites).
-
-For embedding with CMake, see [Embedding the library](#embedding-the-library);
-that build path does not require mise or its development tools.
+Development requires Git, mise, Bash, a platform C11 compiler, pkg-config and
+libarchive development files. See the [platform prerequisites](install.md#select-a-version-or-build-from-source).
+Mise pins CMake 4.4.4, Ninja 1.13.2, Python 3.13.15, uv 0.12.24 and clang-format
+22.1.8. These versions have been exercised on macOS arm64. Compilers come from
+the platform: GCC or Clang on Linux, Apple command-line tools on macOS, and
+MSYS2 UCRT64 GCC on Windows. `CC` and `CXX` override the platform defaults (Clang on macOS,
+GCC on Linux/Windows). Python and formatting tools are development dependencies.
 
 ## Build with mise
 
 ```sh
 mise trust
 mise install
+mise run configure
 mise run build
+mise run test
+mise run check
+mise run format
 mise run run -- --help
+mise run run -- list example.zip
 ```
 
-Build output stays outside the source tree, in the temporary directory by
-default. Set `ARC_BUILD_DIR` to choose another location and `CC` to choose the
-compiler; `AR` selects the static-library archiver. `ARC_VERSION` sets the
-CLI version override (default: the root `VERSION` file), and `ARC_SANITIZE=1` enables ASan/UBSan on macOS or
-Linux. Direct calls to `scripts/build.sh`, `scripts/run.sh` and
-`scripts/test.sh` load the configuration through `mise exec` when necessary.
-Standalone `filekit/build.sh` retains its own defaults and does not require mise.
-`mise run run` builds the application and forwards its arguments.
+`configure` initializes the `dev` preset only when needed. `build` depends on
+it and uses incremental CMake/Ninja compilation. CMake regenerates changed
+CMake files and `VERSION` during a build; the wrapper reapplies changed presets. `test` builds first, runs C API tests
+through CTest, then the locked Python CLI suite through uv. Arguments to `test`
+are forwarded to pytest. `check` also runs independent filekit checks,
+CMake/pkg-config consumers and formatting validation without editing sources.
+`format` is the explicit source-modifying task.
 
-The root `VERSION` file is the release version source for shell builds, CMake
-and package metadata. Local builds report that version. To override CLI build
-identification without changing the package version:
+`CMakePresets.json` defines Debug `dev`, Debug `sanitize`, Release `release`
+(with system libraries), and `release-vcpkg` (for distributable native builds).
+All use Ninja, enable the CLI and API tests, and export compile commands.
+Compiler flags, sources, platform handling and installation belong to CMake.
+Development uses system libarchive; on macOS the helper discovers Homebrew's
+libarchive prefix while preserving additional `CMAKE_PREFIX_PATH` entries.
+
+Development output defaults to `build/dev`; sanitizer output to `build/sanitize`.
+`ARC_BUILD_DIR` chooses a separate directory. `ARC_CMAKE_PRESET` selects the
+preset (`dev` by default); `ARC_SANITIZE=1` selects `sanitize` for compatibility.
+`ARC_VERSION` overrides the CLI identification, while package metadata always
+uses `VERSION`:
 
 ```sh
-ARC_VERSION=0.1.0 mise run build
-ARC_VERSION=0.1.0 mise run run -- --version
+ARC_VERSION=0.1.0+local mise run build
+ARC_SANITIZE=1 CC=clang mise run test
 ```
 
-The root `mise.toml` declares compiler defaults (Clang on macOS, GCC on Linux
-and MSYS2 Windows), C11 warnings, platform selection and sanitizer flags.
-Arc and its embedded filekit use the same compiler. `pkg-config` supplies
-libarchive's include and link arguments. On macOS, Homebrew's libarchive path
-is prepended to existing `PKG_CONFIG_PATH` entries.
-Python and uv are pinned for development tools; they are not runtime dependencies.
+Use a separate directory when switching compilers or sanitizer mode. Existing
+caches reject a different explicit `CC` rather than silently using the previous
+compiler. Changes to other configure inputs (toolchain, prefix, user flags)
+require explicit reconfiguration as well:
+
+```sh
+CC=clang CXX=clang++ ARC_BUILD_DIR=build/clang mise run test
+CC=gcc CXX=g++ ARC_BUILD_DIR=build/gcc mise run test
+# Explicitly reset a selected configuration when appropriate:
+CC=clang cmake --fresh --preset dev
+```
+
+The build/run/test shell helpers remain thin CMake/CTest/process wrappers.
+They contain no source compilation or compiler flags. Prefer mise, which
+provides the pinned tools; external consumers do not require it.
+
+## Release and distribution
+
+```sh
+mise run release
+mise run dist
+```
+
+`release` prepares the pinned vcpkg checkout and dependencies, builds Release,
+and checks the binary version, architecture and dynamic dependencies. `dist`
+depends on it, runs CTest and the full Python suite against that binary, then
+packages it. Both select the current host; cross-compiling all targets is not
+required. Output defaults to `build/release/<target>/{arc,deps,vcpkg,assets}`.
+`ARC_RELEASE_BUILD_DIR` overrides the target-specific root; do not share it
+between toolchains or targets. `RELEASE_TARGET` selects a native CI target.
+
+Distributions include the executable, README, Arc license, dependency/runtime
+notices, `VERSION` and `BUILD_INFO` (version, target, dependency triplet).
+Dependency versions and the vcpkg checkout are pinned by the existing
+`release/vcpkg.json` baseline. The system-library `release` preset is available
+for direct CMake users; `mise run release` uses `release-vcpkg` to retain static
+release linkage. See [release prerequisites and platform policy](../release/README.md).
+
+## Direct CMake without mise
+
+With CMake 3.21+, Ninja, a C compiler and libarchive development files installed:
+
+```sh
+# On macOS, add -DCMAKE_PREFIX_PATH="$(brew --prefix libarchive)" if needed.
+cmake --preset dev
+cmake --build --preset dev
+ctest --preset dev
+cmake --preset release
+cmake --build --preset release
+cmake --install build/release --prefix /your/prefix
+```
+
+CTest covers C API tests; the full development suite additionally needs the
+mise-managed Python/uv tasks. Presets are conveniences, not an embedding
+requirement: ordinary `cmake -S . -B <dir>` and `add_subdirectory` remain supported.
 
 ## Publishing a release
 
@@ -179,7 +242,7 @@ filekit headers or a separate filekit library.
 ### Consumer verification
 
 ```sh
-mise exec -- bash scripts/check-consumers.sh
+mise run consumers
 ```
 
 Requires CMake, C/C++ compilers, pkg-config, libarchive and the mise-managed

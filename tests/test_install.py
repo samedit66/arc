@@ -53,9 +53,9 @@ else
 fi
 ''')
     write_script(tools / "mise", '''
-if [ "$1" = trust ]; then exit 0; fi
+if [ "$1" = trust ] || [ "$1" = install ]; then exit 0; fi
 [ "$1" = exec ] && [ "$2" = -- ]
-[ "$MISE_DISABLE_TOOLS" = python,uv ]
+[ "$MISE_DISABLE_TOOLS" = python,uv,pipx:clang-format ]
 [ "${ARC_BUILD_CONFIG:-}" = '' ]
 export ARC_BUILD_CONFIG=1 CC=cc
 [ "${FAIL_STAGE:-}" != compiler ] || CC=arc-no-such-compiler

@@ -1,0 +1,113 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "dev",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ARC_SANITIZE": "OFF",
+        "ARC_BUILD_CLI": "ON",
+        "ARC_BUILD_API_TESTS": "ON",
+        "ARC_DEVELOPER_WARNINGS": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "sanitize",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/sanitize",
+      "cacheVariables": {
+        "ARC_SANITIZE": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "release-vcpkg",
+      "inherits": "release",
+      "binaryDir": "$env{ARC_RELEASE_BUILD_DIR}/arc",
+      "toolchainFile": "$env{ARC_RELEASE_BUILD_DIR}/vcpkg/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "ARC_STATIC_RUNTIME": "ON",
+        "VCPKG_TARGET_TRIPLET": "$env{ARC_VCPKG_TRIPLET}",
+        "VCPKG_INSTALLED_DIR": "$env{ARC_RELEASE_BUILD_DIR}/deps",
+        "VCPKG_MANIFEST_DIR": "${sourceDir}/release",
+        "VCPKG_MANIFEST_INSTALL": "OFF",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/release/triplets"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev"
+    },
+    {
+      "name": "sanitize",
+      "configurePreset": "sanitize"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "release-vcpkg",
+      "configurePreset": "release-vcpkg"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "sanitize",
+      "configurePreset": "sanitize",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "release-vcpkg",
+      "configurePreset": "release-vcpkg",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    }
+  ]
+}

@@ -20,11 +20,16 @@ mise -C filekit run build
 mise -C filekit run verify
 ```
 
-`FILEKIT_BUILD_DIR` selects the independent output directory. Arc builds its
-linked copy in `$ARC_BUILD_DIR/filekit`; independent filekit tasks use their own
-temporary build directory. `CC` and `AR` select the toolchain.
-`FILEKIT_SANITIZE=1` enables ASan/UBSan for an independent build; repository builds
-also honor `ARC_SANITIZE=1`. Binaries and fixtures stay outside the source tree.
+The independent build uses CMake and Ninja (pinned by the local mise config).
+Direct `cmake -S filekit -B <dir> -G Ninja`, `cmake --build <dir>` and
+`ctest --test-dir <dir>` work without mise or Arc.
+`FILEKIT_BUILD_DIR` selects the independent output directory (default:
+`filekit/build`). Arc embeds the same CMake source list in its own library;
+no separate filekit archive is needed by Arc consumers. `CC` selects the
+compiler; `AR` can select the independent build's archiver at initial configure.
+Use a separate build directory when changing toolchains or sanitizer mode.
+`FILEKIT_SANITIZE=1` enables ASan/UBSan; the wrapper also honors `ARC_SANITIZE=1`.
+Fixtures run in temporary directories under the build tree.
 To use the library, include `filekit.h` and link `libfilekit.a` from a compatible
 C runtime/toolchain. No arc header or object is required.
 
@@ -103,7 +108,10 @@ filekit/
   filekit_internal.h         private implementation/in-repository integration hooks
   tests.c                    standalone API contract checks
   mise.toml                  independent build and verification tasks
-  build.sh                   C11 static-library build
+  build.sh                   thin CMake build wrapper
+  CMakeLists.txt             independent library and CTest targets
+  sources.cmake              shared implementation source list
+  run-test.cmake             isolated CTest execution
   verify.py                  temporary API and build-failure checks
 ```
 
