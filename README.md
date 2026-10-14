@@ -11,6 +11,9 @@ A human-centered C11 library and CLI for everyday archive tasks.
 I originally built it as a backend for another library, then gave it a project
 of its own. That made the API easier to maintain—and gave me a tool of my own.
 
+I don’t plan to maintain arc regularly. As long as it does what I need, I’m happy
+to leave it as it is. Bug fixes are welcome.
+
 ## Highlights
 
 - Usability first, features second 💅
