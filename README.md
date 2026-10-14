@@ -1,6 +1,6 @@
 <div align="center">
 
-# arc
+# Ꭿrc
 
 Archives, made simple.
 
