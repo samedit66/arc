@@ -1,7 +1,7 @@
 #ifndef ARC_INTERNAL_PLATFORM_TEXT_H
 #define ARC_INTERNAL_PLATFORM_TEXT_H
 
-#include "../arc.h"
+#include "arc.h"
 #include <locale.h>
 #ifdef _WIN32
 #include <wchar.h>

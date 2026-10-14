@@ -1,4 +1,4 @@
-#include "filekit_internal.h"
+#include "fs_internal.h"
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
@@ -6,8 +6,8 @@
 #include <stdarg.h>
 #include <stdio.h>
 
-FilekitResult fk_result(FilekitCode code, const char *format, ...) {
-    FilekitResult r = {code, {0}};
+ArcFsResult arc_fs_result(ArcFsCode code, const char *format, ...) {
+    ArcFsResult r = {code, {0}};
     if (format) {
         va_list args;
         va_start(args, format);
@@ -17,50 +17,50 @@ FilekitResult fk_result(FilekitCode code, const char *format, ...) {
     return r;
 }
 
-FilekitResult fk_okay(void) {
-    return fk_result(FILEKIT_OK, NULL);
+ArcFsResult arc_fs_okay(void) {
+    return arc_fs_result(ARC_FS_OK, NULL);
 }
 
-int fk_failed(FilekitResult r) {
-    return r.code != FILEKIT_OK;
+int arc_fs_failed(ArcFsResult r) {
+    return r.code != ARC_FS_OK;
 }
 
-FilekitResult fk_system_error(const char *operation, const char *path) {
+ArcFsResult arc_fs_system_error(const char *operation, const char *path) {
     int e = errno;
-    return fk_result(e == EEXIST   ? FILEKIT_ALREADY_EXISTS
-                     : e == ENOMEM ? FILEKIT_OUT_OF_MEMORY
-                                   : FILEKIT_IO_ERROR,
-                     "%s '%s': %s", operation, path ? path : "", strerror(e));
+    return arc_fs_result(e == EEXIST   ? ARC_FS_ALREADY_EXISTS
+                         : e == ENOMEM ? ARC_FS_OUT_OF_MEMORY
+                                       : ARC_FS_IO_ERROR,
+                         "%s '%s': %s", operation, path ? path : "", strerror(e));
 }
 
-FilekitResult fk_copy_string(const char *s, char **out) {
+ArcFsResult arc_fs_copy_string(const char *s, char **out) {
     size_t n = strlen(s);
     if (n == SIZE_MAX)
-        return fk_result(FILEKIT_OVERFLOW, "Path is too long.");
+        return arc_fs_result(ARC_FS_OVERFLOW, "Path is too long.");
     char *p = malloc(n + 1);
     if (!p)
-        return fk_result(FILEKIT_OUT_OF_MEMORY, "Cannot allocate path.");
+        return arc_fs_result(ARC_FS_OUT_OF_MEMORY, "Cannot allocate path.");
     memcpy(p, s, n + 1);
     *out = p;
-    return fk_okay();
+    return arc_fs_okay();
 }
 
-FilekitResult fk_join(const char *a, const char *b, char **out) {
+ArcFsResult arc_fs_join(const char *a, const char *b, char **out) {
     size_t x = strlen(a), y = strlen(b);
     if (y > SIZE_MAX - 2 || x > SIZE_MAX - y - 2)
-        return fk_result(FILEKIT_OVERFLOW, "Path is too long.");
+        return arc_fs_result(ARC_FS_OVERFLOW, "Path is too long.");
     char *p = malloc(x + y + 2);
     if (!p)
-        return fk_result(FILEKIT_OUT_OF_MEMORY, "Cannot allocate path.");
+        return arc_fs_result(ARC_FS_OUT_OF_MEMORY, "Cannot allocate path.");
     memcpy(p, a, x);
     if (x && y)
         p[x++] = '/';
     memcpy(p + x, b, y + 1);
     *out = p;
-    return fk_okay();
+    return arc_fs_okay();
 }
 
-int fk_valid_utf8(const char *s) {
+int arc_fs_valid_utf8(const char *s) {
     const unsigned char *p = (const unsigned char *)s;
     while (*p) {
         uint32_t cp;
@@ -93,8 +93,8 @@ int fk_valid_utf8(const char *s) {
     return 1;
 }
 
-FilekitResult fk_check_path(const char *path) {
-    if (!path || !*path || !fk_valid_utf8(path))
-        return fk_result(FILEKIT_INVALID_PATH, "Invalid UTF-8 filesystem path.");
-    return fk_okay();
+ArcFsResult arc_fs_check_path(const char *path) {
+    if (!path || !*path || !arc_fs_valid_utf8(path))
+        return arc_fs_result(ARC_FS_INVALID_PATH, "Invalid UTF-8 filesystem path.");
+    return arc_fs_okay();
 }

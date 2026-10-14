@@ -1,7 +1,7 @@
 #ifndef ARC_INTERNAL_ARC_INTERNAL_H
 #define ARC_INTERNAL_ARC_INTERNAL_H
 
-#include "../arc.h"
+#include "arc.h"
 ArcResult arc_get_capabilities_impl(const ArcOptions *options, unsigned *out);
 /**
  * Return the first retained writer failure. Public wrappers own the locale scope.

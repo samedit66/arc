@@ -145,8 +145,8 @@ mise run check
 ```
 
 The [test guide](tests/README.md) covers focused runs, fixtures and sanitizers.
-Filesystem operations live in [filekit](filekit/README.md), a separate C11
-sublibrary with its own checks and no libarchive dependency.
+Filesystem operations live in the internal [fs module](docs/design.md), a C11
+module tested by the common suite and no libarchive dependency.
 
 The [design document](docs/design.md) describes the current architecture and contracts.
 

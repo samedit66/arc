@@ -19,45 +19,46 @@ All failures controlled by arc are values. Its own code does not use exceptions,
 
 ## 2. Scope and file boundaries
 
-arc has one public header and private archive modules. The independently buildable filekit sublibrary has its own public `filekit/filekit.h` and error values. Internal headers are not part of either library’s caller-facing API.
+arc has one public header and private archive modules. The internal fs module has its own private `src/fs/fs.h` and error values. Only arc.h is part of the caller-facing API.
 
 | File | Responsibility |
 |---|---|
 | `arc.h` | Public types, declarations and contracts; standard C headers only. |
-| `arc.c` | Public operation wrappers, locale scopes, output publication and cleanup sequencing. |
-| `cli/output.{h,c}` | CLI messages and safe text display. |
-| `cli/progress.{h,c}` | CLI activity animation and its thread lifecycle. |
-| `cli/main.c` | CLI parsing, automatic source/destination selection, tree display and diagnostics. |
-| `internal/pack.c` | Whole-operation packing, source basename/root mapping and writer ownership. |
-| `internal/arc_internal.h` | Private operation entry points; no writer representation. |
-| `internal/writer.c` | Writer state and ownership, chunks, filesystem traversal through libarchive, selected hard-link identity, close/discard. |
-| `internal/reader.c` | Sequential reader ownership/state, listing, statistics, file size and full-content verification. |
-| `internal/unpack.c` | Selection and extraction state, directories, deferred links and metadata sequencing. |
-| `internal/libarchive_adapter.{h,c}` | Format/filter tables, configuration, reader lifecycle, entry conversion and backend error mapping. |
-| `internal/archive_paths.{h,c}` | Safe relative archive names, shared file/directory conflict rules and a typed AVL path index. |
-| `filekit/filekit.h` | Independent public UTF-8 filesystem API and result/identity/info values. |
-| `filekit/file_system_{unix,windows}.c` | Native filesystem implementations with validated public operands. |
-| `filekit/windows_text.c` | Windows Unicode conversion and native path rules. |
-| `filekit/support.c` | Independent errors, strings and UTF-8 validation. |
-| `internal/platform_text.h` | Private locale scope, name comparison and platform path/text operations. |
-| `internal/platform_text_{unix,windows}.c` | Thread-local conversion contexts, archive name rules and bridges to filekit Unicode conversion. |
-| `internal/support.{h,c}` | Archive result construction, filekit result translation, cleanup diagnostics, strings and a bridge to filekit UTF-8 validation. |
+| `src/arc.c` | Public operation wrappers, locale scopes, output publication and cleanup sequencing. |
+| `src/cli/output.{h,c}` | CLI messages and safe text display. |
+| `src/cli/progress.{h,c}` | CLI activity animation and its thread lifecycle. |
+| `src/cli/main.c` | CLI parsing, automatic source/destination selection, tree display and diagnostics. |
+| `src/internal/pack.c` | Whole-operation packing, source basename/root mapping and writer ownership. |
+| `src/internal/arc_internal.h` | Private operation entry points; no writer representation. |
+| `src/internal/writer.c` | Writer state and ownership, chunks, filesystem traversal through libarchive, selected hard-link identity, close/discard. |
+| `src/internal/reader.c` | Sequential reader ownership/state, listing, statistics, file size and full-content verification. |
+| `src/internal/unpack.c` | Selection and extraction state, directories, deferred links and metadata sequencing. |
+| `src/internal/libarchive_adapter.{h,c}` | Format/filter tables, configuration, reader lifecycle, entry conversion and backend error mapping. |
+| `src/internal/archive_paths.{h,c}` | Safe relative archive names, shared file/directory conflict rules and a typed AVL path index. |
+| `src/fs/fs.h` | Internal UTF-8 filesystem interface and result/identity/info values. |
+| `src/fs/file_system_{unix,windows}.c` | Native filesystem implementations with validated operands. |
+| `src/fs/fs_internal.h` | Shared filesystem implementation helpers and text conversion hooks used by archive modules. |
+| `src/fs/windows_text.c` | Windows Unicode conversion and native path rules. |
+| `src/fs/support.c` | Module errors, strings and UTF-8 validation. |
+| `src/internal/platform_text.h` | Private locale scope, name comparison and platform path/text operations. |
+| `src/internal/platform_text_{unix,windows}.c` | Thread-local conversion contexts, archive name rules and bridges to fs Unicode conversion. |
+| `src/internal/support.{h,c}` | Archive result construction, fs result translation, cleanup diagnostics, strings and a bridge to fs UTF-8 validation. |
 
 Dependency direction:
 
 ```text
-cli/main.c -> arc.h
-arc.c -> private operations + platform text + support
-writer/reader/unpack -> libarchive adapter + filekit + shared path rules
-platform text/support -> private filekit text helpers (in-repository integration)
-filekit -> C runtime + native platform APIs
+src/cli/main.c -> arc.h
+src/arc.c -> private operations + platform text + support
+writer/reader/unpack -> libarchive adapter + fs + shared path rules
+platform text/support -> private fs text helpers (in-repository integration)
+fs -> C runtime + native platform APIs
 ```
 
-Only the writer, reader, unpack and libarchive adapter modules use libarchive. Archive modules call filekit directly using its own info, identity and link-kind types. Filekit never accepts backend entries or extraction records. The backend adapter exposes private `ArchiveMetadata` values; unpack owns permission/time restoration policy. `ar_from_filekit` in support translates errors without an operation wrapper layer. `struct ArcReader` and its current-entry text are owned exclusively by `reader.c`; listing delegates to this sequential reader. `struct ArcWriter` and the writer index are owned exclusively by `writer.c`; `unpack.c` owns a distinct extraction index, retained entry clones and deferred-link state. Name-conflict semantics are shared through a typed AVL path index containing copied names, entry types and stable owner record numbers. Writer and extraction records remain separately owned; no generic untyped collection is introduced.
+Only the writer, reader, unpack and libarchive adapter modules use libarchive. Archive modules call fs directly using its own info, identity and link-kind types. fs never accepts backend entries or extraction records. The backend adapter exposes private `ArchiveMetadata` values; unpack owns permission/time restoration policy. `ar_from_fs` in support translates errors without an operation wrapper layer. `struct ArcReader` and its current-entry text are owned exclusively by `reader.c`; listing delegates to this sequential reader. `struct ArcWriter` and the writer index are owned exclusively by `writer.c`; `unpack.c` owns a distinct extraction index, retained entry clones and deferred-link state. Name-conflict semantics are shared through a typed AVL path index containing copied names, entry types and stable owner record numbers. Writer and extraction records remain separately owned; no generic untyped collection is introduced.
 
-The build selects one filekit filesystem implementation and one arc platform-text implementation at compile time. Filekit builds to its own static library without libarchive or pkg-config; arc embeds its platform objects in libarc.a, which the CLI links. Its public errors are explicitly translated to the unchanged ArcResult contract. The build uses an explicit object list; unselected or stale objects are not linked. There is no runtime platform dispatch. The private text header contains platform-specific locale representation; native branches needed to call libarchive's wide APIs remain in its adapter.
+The build selects one fs filesystem implementation and one arc platform-text implementation at compile time. The fs sources compile directly into libarc.a, which the CLI links; fs does not depend on libarchive. Its module errors are explicitly translated to the unchanged ArcResult contract. The build uses an explicit object list; unselected or stale objects are not linked. There is no runtime platform dispatch. The private text header contains platform-specific locale representation; native branches needed to call libarchive's wide APIs remain in its adapter.
 
-The mise tasks own build, formatting and black-box CLI checks; `.github/workflows/ci.yml` invokes them on macOS, Linux and Windows. Generated test fixtures and binaries remain outside the source tree. Pytest tests use an isolated uv project in `tests/`. The filekit sublibrary retains independent API checks and its own mise tasks; arc tests also compile a focused public C API harness against the built library. No third-party production dependency, formatter configuration, dynamic loader or runtime dispatch is introduced.
+The mise tasks own build, formatting and black-box CLI checks; `.github/workflows/ci.yml` invokes them on macOS, Linux and Windows. Generated test fixtures and binaries remain outside the source tree. Pytest tests use an isolated uv project in `tests/`. Filesystem module checks run with the common CTest suite; arc tests also compile a focused public C API harness against the built library. No third-party production dependency, formatter configuration, dynamic loader or runtime dispatch is introduced.
 
 ## 3. Human-oriented interface principles
 
@@ -799,7 +800,7 @@ No interactive overwrite prompt, --overwrite, automatic skipping or silent subst
 Exit codes: 0 for success, 1 for operational failure, 2 for command-line usage errors. Diagnostic output is English and written to stderr. CLI status and diagnostic text
 escapes control characters from paths and backend messages; presentation color
 sequences are generated separately. A stdout flush failure produces a nonzero
-exit status, including failures discovered after buffered list/info output. Cleanup failures are reported separately from the original failure. `cli/main.c` uses `wmain` on Windows and `main` on other targets.
+exit status, including failures discovered after buffered list/info output. Cleanup failures are reported separately from the original failure. `src/cli/main.c` uses `wmain` on Windows and `main` on other targets.
 
 ## 15. API sequence examples
 
@@ -855,10 +856,10 @@ These independent fragments require normal result checks and writer cleanup. The
 
 The mise tasks own local builds, formatting and black-box CLI tests. CI runs
 builds and tests on macOS, Linux and Windows; sanitizers run on macOS and Linux.
-Tests use a freshly built executable and isolated temporary fixtures. Filekit
-has a separate API suite. See the [test guide](../tests/README.md).
+Tests use a freshly built executable and isolated temporary fixtures. The fs module
+is tested in the same CTest suite. See the [test guide](../tests/README.md).
 
-The mise build emits `libarc.a` containing arc and private filekit objects.
+The mise build emits `libarc.a` containing arc and private fs objects.
 Libarchive remains external. CMake 3.21+ provides `arc::arc` for source-tree
 embedding and installed packages, plus relocatable pkg-config metadata. The root `VERSION` supplies the release
 version for both build paths and installed package metadata.

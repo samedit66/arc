@@ -1,7 +1,7 @@
 #ifndef ARC_INTERNAL_LIBARCHIVE_ADAPTER_H
 #define ARC_INTERNAL_LIBARCHIVE_ADAPTER_H
 
-#include "../arc.h"
+#include "arc.h"
 
 typedef struct {
     unsigned mode;

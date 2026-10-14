@@ -1,3 +1,10 @@
+/*
+ * Arc command-line application.
+ *
+ * Parses commands and options, selects default source and destination
+ * paths, invokes archive operations, and presents results to the user.
+ * Terminal output and progress handling live in adjacent CLI modules.
+ */
 #ifndef _WIN32
 #define _POSIX_C_SOURCE 200809L
 #define _DARWIN_C_SOURCE
@@ -207,8 +214,8 @@ static char *from_wide(const wchar_t *s) {
 }
 #endif
 static ArcResult source_directory(const char *path, int *directory) {
-    FilekitInfo info = {0};
-    ArcResult r = ar_from_filekit(filekit_info(path, &info));
+    ArcFsInfo info = {0};
+    ArcResult r = ar_from_fs(arc_fs_info(path, &info));
     if (arc_ok(r) && !info.exists)
         r = ar_result(ARC_NOT_FOUND, "Source directory not found: '%s'.", path);
     if (arc_ok(r))

@@ -9,14 +9,14 @@
 #include <limits.h>
 #include "arc_internal.h"
 #include "archive_paths.h"
-#include "../filekit/filekit.h"
+#include "fs/fs.h"
 #include "libarchive_adapter.h"
 #include "platform_text.h"
 #include <time.h>
 
 typedef struct {
     char *name;
-    FilekitInfo identity;
+    ArcFsInfo identity;
     ArcEntryType type;
     size_t identity_left, identity_right;
     int identity_height;
@@ -35,7 +35,7 @@ struct ArcWriter {
     int fd, entry_open;
     uint64_t remaining;
     unsigned capabilities;
-    FilekitInfo output;
+    ArcFsInfo output;
     WriterIndex index;
     ArcResult failure;
 };
@@ -114,7 +114,7 @@ static size_t identity_insert(WriterIndex *index, size_t root, size_t record) {
     }
     WriterItem *p = &index->items[root - 1];
     int order =
-        filekit_compare_identity(index->items[record - 1].identity.identity, p->identity.identity);
+        arc_fs_compare_identity(index->items[record - 1].identity.identity, p->identity.identity);
     if (order < 0)
         p->identity_left = identity_insert(index, p->identity_left, record);
     else
@@ -137,11 +137,11 @@ static size_t identity_insert(WriterIndex *index, size_t root, size_t record) {
     return root;
 }
 
-static WriterItem *identity_find(WriterIndex *index, FilekitIdentity identity) {
+static WriterItem *identity_find(WriterIndex *index, ArcFsIdentity identity) {
     size_t record = index->identity_root;
     while (record) {
         WriterItem *p = &index->items[record - 1];
-        int order = filekit_compare_identity(identity, p->identity.identity);
+        int order = arc_fs_compare_identity(identity, p->identity.identity);
         if (!order)
             return p;
         record = order < 0 ? p->identity_left : p->identity_right;
@@ -192,23 +192,23 @@ ArcResult arc_create_impl(const char *path, const ArcOptions *options, ArcWriter
         free(w);
         return ar_result(ARC_OUT_OF_MEMORY, "Cannot allocate backend.");
     }
-    r = ar_from_filekit(filekit_absolute_path(path, &w->path));
+    r = ar_from_fs(arc_fs_absolute_path(path, &w->path));
     if (!ar_failed(r))
         r = backend_configure_writer(w->backend, options);
     if (!ar_failed(r))
-        r = ar_from_filekit(filekit_create_file_exclusive(w->path, 0666, &w->fd));
+        r = ar_from_fs(arc_fs_create_file_exclusive(w->path, 0666, &w->fd));
     if (r.code == ARC_ALREADY_EXISTS)
         r = ar_diagnostic(r, ARC_REASON_DESTINATION_EXISTS, path);
     if (!ar_failed(r))
-        r = ar_from_filekit(filekit_info(w->path, &w->output));
+        r = ar_from_fs(arc_fs_info(w->path, &w->output));
     if (!ar_failed(r) && archive_write_open_fd(w->backend, w->fd) != ARCHIVE_OK)
         r = backend_error(w->backend, ARC_IO_ERROR);
     if (ar_failed(r)) {
         if (archive_write_free(w->backend) != ARCHIVE_OK)
             r = ar_cleanup(r, ar_result(ARC_IO_ERROR, "Backend cleanup failed."));
         if (w->fd >= 0) {
-            r = ar_cleanup(r, ar_from_filekit(filekit_close(w->fd, w->path)));
-            ArcResult cleanup = ar_from_filekit(filekit_remove_file(w->path));
+            r = ar_cleanup(r, ar_from_fs(arc_fs_close(w->fd, w->path)));
+            ArcResult cleanup = ar_from_fs(arc_fs_remove_file(w->path));
             if (ar_failed(cleanup))
                 cleanup.partial_output = 1;
             r = ar_cleanup(r, cleanup);
@@ -222,7 +222,7 @@ ArcResult arc_create_impl(const char *path, const ArcOptions *options, ArcWriter
 }
 
 static ArcResult start_entry(ArcWriter *w, struct archive_entry *entry, ArcEntryType type,
-                             FilekitInfo identity) {
+                             ArcFsInfo identity) {
     const char *name = archive_entry_pathname_utf8(entry);
     if (!name)
         return writer_failure(w,
@@ -265,7 +265,7 @@ ArcResult arc_begin_file_impl(ArcWriter *w, const char *path, uint64_t size) {
     archive_entry_set_perm(e, 0644);
     archive_entry_set_mtime(e, time(NULL), 0);
     archive_entry_set_size(e, (la_int64_t)size);
-    r = start_entry(w, e, ARC_ENTRY_FILE, (FilekitInfo){0});
+    r = start_entry(w, e, ARC_ENTRY_FILE, (ArcFsInfo){0});
     archive_entry_free(e);
     free(name);
     return r;
@@ -318,8 +318,8 @@ ArcResult arc_add_text_impl(ArcWriter *w, const char *path, const char *text) {
 
 static ArcResult pack_entry(ArcWriter *w, struct archive *disk, struct archive_entry *e,
                             const char *source, const char *stored) {
-    FilekitInfo identity;
-    ArcResult r = ar_from_filekit(filekit_info(source, &identity));
+    ArcFsInfo identity;
+    ArcResult r = ar_from_fs(arc_fs_info(source, &identity));
     if (ar_failed(r))
         return writer_failure(w, r);
     if (!identity.exists)
@@ -413,11 +413,11 @@ static ArcResult add_source(ArcWriter *w, const char *source, const char *stored
             break;
         prefix[--plen] = 0;
     }
-    FilekitInfo root = {0};
-    r = ar_from_filekit(filekit_info(prefix, &root));
+    ArcFsInfo root = {0};
+    r = ar_from_fs(arc_fs_info(prefix, &root));
     if (!ar_failed(r) && !root.exists)
         r = ar_result(ARC_IO_ERROR, "Source does not exist: '%s'.", prefix);
-    if (!ar_failed(r) && filekit_same_identity(root, w->output))
+    if (!ar_failed(r) && arc_fs_same_identity(root, w->output))
         r = ar_result(ARC_INVALID_ARGUMENT, "Source is the output archive.");
     if (!ar_failed(r) && file_only && (root.directory || root.symbolic))
         r = ar_result(ARC_UNSUPPORTED, "Source is not an ordinary file.");
@@ -459,10 +459,10 @@ static ArcResult add_source(ArcWriter *w, const char *source, const char *stored
             suffix = path + plen + (prefix[plen - 1] != '/');
         else
             r = ar_result(ARC_INVALID_PATH, "Filesystem traversal escaped source '%s'.", prefix);
-        FilekitInfo current = {0};
+        ArcFsInfo current = {0};
         if (!ar_failed(r))
-            r = ar_from_filekit(filekit_info(path, &current));
-        int excluded = !ar_failed(r) && filekit_same_identity(current, w->output);
+            r = ar_from_fs(arc_fs_info(path, &current));
+        int excluded = !ar_failed(r) && arc_fs_same_identity(current, w->output);
         if (!ar_failed(r) && !excluded && !(first && !*stored)) {
             r = ar_join(stored, suffix, &name);
             if (!ar_failed(r))
@@ -508,9 +508,9 @@ ArcResult release_writer(ArcWriter **owned, int discard) {
     status = archive_write_free(w->backend);
     if (status != ARCHIVE_OK)
         r = ar_cleanup(r, ar_result(ARC_IO_ERROR, "Backend cleanup failed."));
-    r = ar_cleanup(r, ar_from_filekit(filekit_close(w->fd, w->path)));
+    r = ar_cleanup(r, ar_from_fs(arc_fs_close(w->fd, w->path)));
     if (discard) {
-        ArcResult cleanup = ar_from_filekit(filekit_remove_file(w->path));
+        ArcResult cleanup = ar_from_fs(arc_fs_remove_file(w->path));
         if (ar_failed(cleanup))
             cleanup.partial_output = 1;
         r = ar_cleanup(r, cleanup);
@@ -528,17 +528,17 @@ ArcResult arc_finish_pack(ArcWriter **owned) {
     if (!owned || !*owned)
         return ar_result(ARC_INVALID_ARGUMENT, "Missing pack writer.");
     char *path = NULL;
-    FilekitInfo output = (*owned)->output;
+    ArcFsInfo output = (*owned)->output;
     ArcResult r = ar_copy_string((*owned)->path, &path);
     if (ar_failed(r))
         return ar_cleanup(r, arc_discard(owned));
     r = arc_close(owned);
     if (ar_failed(r)) {
-        FilekitInfo current = {0};
-        ArcResult cleanup = ar_from_filekit(filekit_info(path, &current));
+        ArcFsInfo current = {0};
+        ArcResult cleanup = ar_from_fs(arc_fs_info(path, &current));
         if (!ar_failed(cleanup) && current.exists) {
-            if (filekit_same_identity(output, current))
-                cleanup = ar_from_filekit(filekit_remove_file(path));
+            if (arc_fs_same_identity(output, current))
+                cleanup = ar_from_fs(arc_fs_remove_file(path));
             else
                 cleanup = ar_result(ARC_IO_ERROR, "Output identity changed; cleanup refused.");
         }

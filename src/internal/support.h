@@ -1,14 +1,14 @@
 #ifndef ARC_INTERNAL_SUPPORT_H
 #define ARC_INTERNAL_SUPPORT_H
 
-#include "../arc.h"
-#include "../filekit/filekit.h"
+#include "arc.h"
+#include "fs/fs.h"
 /**
- * Translate filekit errors at the archive API boundary, preserving diagnostics.
+ * Translate fs errors at the archive API boundary, preserving diagnostics.
  *
- * - `result`: Filekit result to translate; preserve its diagnostic.
+ * - `result`: ArcFs result to translate; preserve its diagnostic.
  */
-ArcResult ar_from_filekit(FilekitResult result);
+ArcResult ar_from_fs(ArcFsResult result);
 #define ARRAY_COUNT(a) (sizeof(a) / sizeof((a)[0]))
 ArcResult ar_result(ArcCode code, const char *format, ...);
 ArcResult ar_okay(void);

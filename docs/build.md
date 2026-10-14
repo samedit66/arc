@@ -27,9 +27,9 @@ mise run run -- list example.zip
 
 `configure` initializes the `dev` preset only when needed. `build` depends on
 it and uses incremental CMake/Ninja compilation. CMake regenerates changed
-CMake files and `VERSION` during a build; the wrapper reapplies changed presets. `test` builds first, runs C API tests
+CMake files and `VERSION` during a build; the wrapper reapplies changed presets. `test` builds first, runs C API and fs module tests
 through CTest, then the locked Python CLI suite through uv. Arguments to `test`
-are forwarded to pytest. `check` also runs independent filekit checks,
+are forwarded to pytest. `check` also runs
 CMake/pkg-config consumers and formatting validation without editing sources.
 `format` is the explicit source-modifying task.
 
@@ -126,7 +126,7 @@ git push origin v0.1.1
 
 The workflow validates the tag and runs the complete Ubuntu, macOS and Windows
 checks on the tagged commit. Publication depends on all checks succeeding,
-including consumer integration, filekit checks and the configured sanitizers.
+including consumer integration, fs checks and the configured sanitizers.
 Before publishing, it refreshes the remote tag and `main` and validates again
 to reject a tag moved to a different commit while checks were running.
 
@@ -194,7 +194,7 @@ target_link_libraries(my_app PRIVATE arc::arc)
 ```
 
 Installation supplies `arc.h`, one static library containing the private
-filekit implementation, and CMake/pkg-config metadata. Libarchive remains an
+fs implementation, and CMake/pkg-config metadata. Libarchive remains an
 external dependency; the CMake package resolves it in the consuming build.
 CMake and pkg-config report the version from `VERSION`. Installed CMake packages
 support version requests with exact compatibility during the 0.x series:
@@ -237,7 +237,7 @@ linked dynamically. Match target architecture and Windows CRT across builds.
 The mise build also produces `libarc.a` in its build directory. For manual
 linking, add the source root to the consumer's include path and link `libarc.a`
 followed by libarchive's pkg-config link arguments. Consumers do not need
-filekit headers or a separate filekit library.
+fs headers or a separate fs library.
 
 ### Consumer verification
 
@@ -256,7 +256,7 @@ consumers exercise both header orders with GDI enabled.
 `mise run format` formats the C sources. `mise run check` builds the project,
 runs the CLI tests and checks C formatting; both formatting tasks require
 clang-format. See [the test guide](../tests/README.md) for focused runs,
-sanitizers and independent filekit checks.
+sanitizers and fs module checks.
 
 ## Migrating the everyday API
 

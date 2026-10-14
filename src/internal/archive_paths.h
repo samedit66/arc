@@ -1,7 +1,7 @@
 #ifndef ARC_INTERNAL_ARCHIVE_PATHS_H
 #define ARC_INTERNAL_ARCHIVE_PATHS_H
 
-#include "../arc.h"
+#include "arc.h"
 ArcResult entry_name(const char *input, char **out);
 /**
  * Match a normalized selector against raw archive text, without host validation.

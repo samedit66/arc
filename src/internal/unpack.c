@@ -139,7 +139,7 @@ static ArcResult apply_entry_metadata(const char *path, struct archive_entry *en
     ArchiveMetadata metadata = backend_file_metadata(entry);
 #ifndef _WIN32
     if (directory) {
-        ArcResult r = ar_from_filekit(filekit_restrict_permissions(path, metadata.mode));
+        ArcResult r = ar_from_fs(arc_fs_restrict_permissions(path, metadata.mode));
         if (ar_failed(r))
             return r;
     }
@@ -147,13 +147,13 @@ static ArcResult apply_entry_metadata(const char *path, struct archive_entry *en
     (void)directory;
 #endif
     if (metadata.mtime_set)
-        return ar_from_filekit(filekit_set_mtime(path, metadata.mtime, metadata.mtime_nsec));
+        return ar_from_fs(arc_fs_set_mtime(path, metadata.mtime, metadata.mtime_nsec));
     return ar_okay();
 }
 
 static ArcResult actual_directory(const char *path) {
-    FilekitInfo i = {0};
-    ArcResult r = ar_from_filekit(filekit_info(path, &i));
+    ArcFsInfo i = {0};
+    ArcResult r = ar_from_fs(arc_fs_info(path, &i));
     if (ar_failed(r))
         return r;
     if (!i.exists || !i.directory || i.symbolic)
@@ -203,13 +203,13 @@ static ArcResult directory(ExtractIndex *index, const char *root, const char *na
                 ARC_REASON_ARCHIVE_CONFLICT, prefix);
         if (!ar_failed(r) && !p) {
             char *full = NULL;
-            FilekitInfo before = {0};
+            ArcFsInfo before = {0};
             r = ar_join(root, prefix, &full);
             if (!ar_failed(r))
-                r = ar_from_filekit(filekit_info(full, &before));
+                r = ar_from_fs(arc_fs_info(full, &before));
             int created = 0;
             if (!ar_failed(r) && !before.exists) {
-                r = ar_from_filekit(filekit_create_directory_exclusive(full, 0777));
+                r = ar_from_fs(arc_fs_create_directory_exclusive(full, 0777));
                 created = !ar_failed(r);
             }
             if (!ar_failed(r))
@@ -302,7 +302,7 @@ static ArcResult hard_links(ExtractIndex *index, const char *root, int selective
                 if (!ar_failed(r))
                     r = ar_join(root, p->target, &source);
                 if (!ar_failed(r))
-                    r = ar_from_filekit(filekit_create_hard_link(source, full));
+                    r = ar_from_fs(arc_fs_create_hard_link(source, full));
                 if (r.code == ARC_ALREADY_EXISTS)
                     r = ar_diagnostic(r, ARC_REASON_ENTRY_EXISTS, full);
                 if (!ar_failed(r))
@@ -447,8 +447,8 @@ static ArcResult resolve_symbolic(ExtractIndex *index, ExtractItem *p) {
                 f->opaque = 1;
                 r = symbolic_step(f, candidate,
                                   child->link_kind == AE_SYMLINK_TYPE_DIRECTORY
-                                      ? FILEKIT_LINK_DIRECTORY
-                                      : FILEKIT_LINK_FILE);
+                                      ? ARC_FS_LINK_DIRECTORY
+                                      : ARC_FS_LINK_FILE);
                 continue;
             }
             free(candidate);
@@ -459,10 +459,10 @@ static ArcResult resolve_symbolic(ExtractIndex *index, ExtractItem *p) {
         }
         /* Infer the native link kind only from selected archive records. */
         int kind = !*candidate || (child && child->type == ARC_ENTRY_DIRECTORY)
-                       ? FILEKIT_LINK_DIRECTORY
+                       ? ARC_FS_LINK_DIRECTORY
                    : child && (child->type == ARC_ENTRY_FILE || child->type == ARC_ENTRY_HARD_LINK)
-                       ? FILEKIT_LINK_FILE
-                       : FILEKIT_LINK_UNKNOWN;
+                       ? ARC_FS_LINK_FILE
+                       : ARC_FS_LINK_UNKNOWN;
         r = symbolic_step(f, candidate, kind);
     }
     while (depth) {
@@ -503,11 +503,11 @@ static ArcResult extract_entry(ExtractIndex *index, const char *root, struct arc
         if (!ar_failed(r) && p->metadata && !metadata_equal(p->metadata, e))
             r = ar_result(ARC_INVALID_ARCHIVE, "Conflicting directory metadata '%s'.", name);
     } else if (!ar_failed(r)) {
-        FilekitInfo before = {0};
+        ArcFsInfo before = {0};
         /* Classify conflicts within the archive before inspecting disk objects. */
         r = append_item(index, name, type, &p);
         if (!ar_failed(r))
-            r = ar_from_filekit(filekit_info(full, &before));
+            r = ar_from_fs(arc_fs_info(full, &before));
         if (!ar_failed(r) && before.exists)
             r = ar_diagnostic(
                 ar_result(ARC_ALREADY_EXISTS, "An entry already exists at the destination."),
@@ -533,8 +533,8 @@ static ArcResult extract_entry(ExtractIndex *index, const char *root, struct arc
     }
     if (!ar_failed(r) && type == ARC_ENTRY_FILE) {
         int fd = -1;
-        r = ar_from_filekit(
-            filekit_create_file_exclusive(full, (unsigned)archive_entry_perm(e) & 0777, &fd));
+        r = ar_from_fs(
+            arc_fs_create_file_exclusive(full, (unsigned)archive_entry_perm(e) & 0777, &fd));
         if (r.code == ARC_ALREADY_EXISTS)
             r = ar_diagnostic(r, ARC_REASON_ENTRY_EXISTS, full);
         if (!ar_failed(r)) {
@@ -548,7 +548,7 @@ static ArcResult extract_entry(ExtractIndex *index, const char *root, struct arc
                     break;
                 }
                 total += (uint64_t)n;
-                r = ar_from_filekit(filekit_write_all(fd, buffer, (size_t)n));
+                r = ar_from_fs(arc_fs_write_all(fd, buffer, (size_t)n));
                 if (ar_failed(r))
                     break;
             }
@@ -557,7 +557,7 @@ static ArcResult extract_entry(ExtractIndex *index, const char *root, struct arc
             if (!ar_failed(r) && archive_entry_size_is_set(e) &&
                 (archive_entry_size(e) < 0 || total != (uint64_t)archive_entry_size(e)))
                 r = ar_result(ARC_INVALID_ARCHIVE, "Extracted size mismatch '%s'.", name);
-            r = ar_cleanup(r, ar_from_filekit(filekit_close(fd, full)));
+            r = ar_cleanup(r, ar_from_fs(arc_fs_close(fd, full)));
             if (!ar_failed(r))
                 r = apply_entry_metadata(full, e, 0);
         }
@@ -672,10 +672,10 @@ ArcResult arc_unpack_impl(const char *path, const char *root, const ArcExtractOp
     int root_created = 0;
     r = safe_root(root);
     if (!ar_failed(r)) {
-        FilekitInfo info = {0};
-        r = ar_from_filekit(filekit_info(root, &info));
+        ArcFsInfo info = {0};
+        r = ar_from_fs(arc_fs_info(root, &info));
         if (!ar_failed(r) && (options->destination_mode == ARC_DESTINATION_NEW || !info.exists)) {
-            r = ar_from_filekit(filekit_create_directory_exclusive(root, 0777));
+            r = ar_from_fs(arc_fs_create_directory_exclusive(root, 0777));
             root_created = !ar_failed(r);
         }
         if (r.code == ARC_ALREADY_EXISTS)
@@ -734,11 +734,11 @@ ArcResult arc_unpack_impl(const char *path, const char *root, const ArcExtractOp
         char *full = NULL;
         r = ar_join(root, p->name, &full);
         if (!ar_failed(r))
-            r = ar_from_filekit(filekit_create_symbolic_link(
+            r = ar_from_fs(arc_fs_create_symbolic_link(
                 full, p->target,
-                p->link_kind == AE_SYMLINK_TYPE_DIRECTORY ? FILEKIT_LINK_DIRECTORY
-                : p->link_kind == AE_SYMLINK_TYPE_FILE    ? FILEKIT_LINK_FILE
-                                                          : (FilekitLinkKind)p->resolved_kind));
+                p->link_kind == AE_SYMLINK_TYPE_DIRECTORY ? ARC_FS_LINK_DIRECTORY
+                : p->link_kind == AE_SYMLINK_TYPE_FILE    ? ARC_FS_LINK_FILE
+                                                          : (ArcFsLinkKind)p->resolved_kind));
         if (r.code == ARC_ALREADY_EXISTS)
             r = ar_diagnostic(r, ARC_REASON_ENTRY_EXISTS, full);
         if (!ar_failed(r))

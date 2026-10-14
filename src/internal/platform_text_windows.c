@@ -11,21 +11,21 @@
 #include <string.h>
 #include <limits.h>
 #include "platform_text.h"
-#include "../filekit/filekit.h"
-#include "../filekit/filekit_internal.h"
+#include "fs/fs.h"
+#include "fs/fs_internal.h"
 #include <errno.h>
 #include <windows.h>
 
 ArcResult platform_wide_string(const char *s, int filesystem, wchar_t **out) {
-    return ar_from_filekit(fk_wide_string(s, filesystem, out));
+    return ar_from_fs(arc_fs_wide_string(s, filesystem, out));
 }
 
 ArcResult platform_utf8_string(const wchar_t *s, char **out) {
-    return ar_from_filekit(fk_utf8_string(s, out));
+    return ar_from_fs(arc_fs_utf8_string(s, out));
 }
 
 ArcResult platform_windows_error(const char *operation, const char *path) {
-    return ar_from_filekit(fk_windows_error(operation, path));
+    return ar_from_fs(arc_fs_windows_error(operation, path));
 }
 
 ArcResult platform_compare_names(const char *a, const char *b, int prefix, int *equal) {
@@ -84,7 +84,7 @@ ArcResult locale_end(LocaleScope *scope, ArcResult r) {
 }
 
 int platform_valid_component(const char *p, size_t k) {
-    if (p[k - 1] == '.' || p[k - 1] == ' ' || fk_reserved_component(p, k))
+    if (p[k - 1] == '.' || p[k - 1] == ' ' || arc_fs_reserved_component(p, k))
         return 0;
     for (size_t i = 0; i < k; ++i)
         if ((unsigned char)p[i] < 32 || strchr("<>:\"\\|?*", p[i]))

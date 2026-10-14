@@ -33,7 +33,7 @@ in CMake. `api_formats.c` checks the named writer
 formats against every named outer filter: unavailable configurations create no
 output, and advertised list/inspect/verify/unpack operations preserve file data.
 On Windows, `api_windows_cleanup.c` substitutes descriptor allocation and
-rollback deletion at native boundaries while using the production filekit code
+rollback deletion at native boundaries while using the production fs code
 and real file creation/handle closing. It checks rollback, cleanup diagnostics
 and preservation of existing files.
 
@@ -54,7 +54,7 @@ in `tests/.venv`; dependencies are declared in `pyproject.toml` and pinned in
 `uv.lock`. uv installs the locked dependencies on first use.
 
 `mise run verify` is an alias for the build-and-test task. `mise run check` also
-checks formatting, independent filekit and external consumers. Mise supplies
+checks formatting and external consumers. Mise supplies
 the pinned clang-format. For an ASan/UBSan run on macOS
 or Linux (mise preserves the explicit compiler and output directory):
 
@@ -62,11 +62,7 @@ or Linux (mise preserves the explicit compiler and output directory):
 ARC_SANITIZE=1 CC=clang ARC_BUILD_DIR=/tmp/arc-sanitize mise run test
 ```
 
-Filekit's API checks run separately:
-
-```sh
-mise run filekit:verify
-```
+Filesystem module checks (`tests/fs.c`) run in the common CTest suite, including sanitizer runs.
 
 CI runs both suites on macOS, Linux and Windows, plus the arc sanitizer suite
 on macOS and Linux. For Windows toolchain setup, see

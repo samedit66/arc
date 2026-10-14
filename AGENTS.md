@@ -22,12 +22,11 @@ paths and never overwrite existing files or links.
 ## Source Layout
 
 - `arc.h`: public API declarations and authoritative operation contracts.
-- `arc.c`: public wrappers, locale scopes, and cleanup sequencing.
-- `cli/main.c`: CLI parsing and commands: pack, unpack, list, info, verify.
-- `internal/`: archive writing, reading, extraction, path validation,
+- `src/arc.c`: public wrappers, locale scopes, and cleanup sequencing.
+- `src/cli/main.c`: CLI parsing and commands: pack, unpack, list, info, verify.
+- `src/internal/`: archive writing, reading, extraction, path validation,
   and the libarchive adapter.
-- `filekit/`: independently buildable C11 filesystem library with
-  its own API and no libarchive dependency.
+- `src/fs/`: internal UTF-8 filesystem module with no libarchive dependency.
 - `tests/`: CLI tests, public C API checks, and consumer integration checks.
 - `scripts/`: build, run, test, formatting, and installation tooling.
 - `CMakeLists.txt` and `cmake/`: library embedding and package integration.
@@ -52,7 +51,6 @@ CMake, Ninja, Python, uv and clang-format are pinned by mise for development too
 - Focused tests: `mise run test -- -k selection`.
 - Tests and formatting validation: `mise run check`.
 - Format C sources: `mise run format`.
-- Independent filesystem checks: `mise run filekit:verify`.
 - CMake/pkg-config consumer checks: `bash scripts/check-consumers.sh`.
 - ASan/UBSan on macOS or Linux:
   `ARC_SANITIZE=1 CC=clang ARC_BUILD_DIR=/tmp/arc-sanitize mise run test`.
@@ -61,8 +59,7 @@ Development output defaults to build/dev (build/sanitize for sanitizers); use AR
 to override it. Test tasks build first and use the resulting executable.
 Do not run pytest directly or bypass the build dependency with --skip-deps.
 
-After changes, run the relevant checks. Changes to filekit require its
-independent checks; changes to embedding or packaging require consumer
+After changes, run the relevant checks. Changes to fs require its module tests; changes to embedding or packaging require consumer
 integration checks. Preserve the existing C style and build conventions.
 
 ## Documentation
@@ -74,5 +71,4 @@ integration checks. Preserve the existing C style and build conventions.
 - `docs/design.md`: architecture, scope, and contracts.
 - `arc.h`: authoritative public API contracts.
 - `tests/README.md`: testing, fixtures, and sanitizers.
-- `filekit/README.md`: filesystem library structure and verification.
-- `filekit/filekit.h`: authoritative filesystem API contracts.
+- `src/fs/fs.h`: internal filesystem operation contracts.

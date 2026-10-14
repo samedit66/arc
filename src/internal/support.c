@@ -1,5 +1,5 @@
 #include "support.h"
-#include "../filekit/filekit_internal.h"
+#include "fs/fs_internal.h"
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
@@ -62,7 +62,7 @@ ArcResult ar_join(const char *a, const char *b, char **out) {
 }
 
 int ar_valid_utf8(const char *s) {
-    return s && fk_valid_utf8(s);
+    return s && arc_fs_valid_utf8(s);
 }
 
 ArcResult ar_diagnostic(ArcResult result, ArcReason reason, const char *path) {
@@ -92,35 +92,35 @@ ArcResult ar_cleanup(ArcResult primary, ArcResult cleanup) {
     return primary;
 }
 
-ArcResult ar_from_filekit(FilekitResult result) {
+ArcResult ar_from_fs(ArcFsResult result) {
     ArcCode code;
     switch (result.code) {
-    case FILEKIT_OK:
+    case ARC_FS_OK:
         code = ARC_OK;
         break;
-    case FILEKIT_INVALID_ARGUMENT:
+    case ARC_FS_INVALID_ARGUMENT:
         code = ARC_INVALID_ARGUMENT;
         break;
-    case FILEKIT_INVALID_PATH:
+    case ARC_FS_INVALID_PATH:
         code = ARC_INVALID_PATH;
         break;
-    case FILEKIT_ALREADY_EXISTS:
+    case ARC_FS_ALREADY_EXISTS:
         code = ARC_ALREADY_EXISTS;
         break;
-    case FILEKIT_UNSUPPORTED:
+    case ARC_FS_UNSUPPORTED:
         code = ARC_UNSUPPORTED;
         break;
-    case FILEKIT_OVERFLOW:
+    case ARC_FS_OVERFLOW:
         code = ARC_OVERFLOW;
         break;
-    case FILEKIT_OUT_OF_MEMORY:
+    case ARC_FS_OUT_OF_MEMORY:
         code = ARC_OUT_OF_MEMORY;
         break;
-    case FILEKIT_IO_ERROR:
+    case ARC_FS_IO_ERROR:
         code = ARC_IO_ERROR;
         break;
     default:
-        return ar_result(ARC_IO_ERROR, "Unknown filekit error.");
+        return ar_result(ARC_IO_ERROR, "Unknown fs error.");
     }
     ArcResult out = {.code = code};
     memcpy(out.message, result.message, sizeof out.message);

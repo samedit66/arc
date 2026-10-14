@@ -1,12 +1,12 @@
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0601
 #endif
-#include "filekit_internal.h"
+#include "fs_internal.h"
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
 
-int fk_reserved_component(const char *s, size_t n) {
+int arc_fs_reserved_component(const char *s, size_t n) {
     char stem[16] = {0};
     size_t k = 0;
     while (k < n && s[k] != '.' && k < sizeof stem - 1) {
@@ -28,7 +28,7 @@ int fk_reserved_component(const char *s, size_t n) {
     return 0;
 }
 
-static FilekitResult validate_windows_path(const char *s) {
+static ArcFsResult validate_windows_path(const char *s) {
     const char *p = s;
     /* Arc normalizes filesystem separators before traversal. Accept both
      * spellings of extended-path prefixes so '?' is treated as part of
@@ -52,32 +52,32 @@ static FilekitResult validate_windows_path(const char *s) {
             p = end;
             continue;
         }
-        if (p[n - 1] == '.' || p[n - 1] == ' ' || fk_reserved_component(p, n))
-            return fk_result(FILEKIT_INVALID_PATH, "Invalid Windows path '%s'.", s);
+        if (p[n - 1] == '.' || p[n - 1] == ' ' || arc_fs_reserved_component(p, n))
+            return arc_fs_result(ARC_FS_INVALID_PATH, "Invalid Windows path '%s'.", s);
         for (size_t i = 0; i < n; ++i)
             if ((unsigned char)p[i] < 32 || strchr("<>:\\\"|?*", p[i]))
-                return fk_result(FILEKIT_INVALID_PATH, "Invalid Windows path '%s'.", s);
+                return arc_fs_result(ARC_FS_INVALID_PATH, "Invalid Windows path '%s'.", s);
         p = end;
     }
-    return fk_okay();
+    return arc_fs_okay();
 }
 
-FilekitResult fk_wide_string(const char *s, int filesystem, wchar_t **out) {
+ArcFsResult arc_fs_wide_string(const char *s, int filesystem, wchar_t **out) {
     if (filesystem) {
-        FilekitResult r = validate_windows_path(s);
-        if (fk_failed(r))
+        ArcFsResult r = validate_windows_path(s);
+        if (arc_fs_failed(r))
             return r;
     }
     int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s, -1, NULL, 0);
     if (!n)
-        return fk_result(FILEKIT_INVALID_PATH, "Invalid UTF-8 path.");
+        return arc_fs_result(ARC_FS_INVALID_PATH, "Invalid UTF-8 path.");
     wchar_t *w = malloc((size_t)n * sizeof *w);
     if (!w)
-        return fk_result(FILEKIT_OUT_OF_MEMORY, "Cannot allocate Unicode path.");
+        return arc_fs_result(ARC_FS_OUT_OF_MEMORY, "Cannot allocate Unicode path.");
     MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s, -1, w, n);
     if (!filesystem) {
         *out = w;
-        return fk_okay();
+        return arc_fs_okay();
     }
     for (wchar_t *p = w; *p; ++p)
         if (*p == L'/')
@@ -85,7 +85,7 @@ FilekitResult fk_wide_string(const char *s, int filesystem, wchar_t **out) {
     DWORD needed = GetFullPathNameW(w, 0, NULL, NULL);
     if (!needed) {
         free(w);
-        return fk_result(FILEKIT_INVALID_PATH, "Cannot resolve '%s'.", s);
+        return arc_fs_result(ARC_FS_INVALID_PATH, "Cannot resolve '%s'.", s);
     }
     wchar_t *full = malloc(((size_t)needed + 8) * sizeof *full);
     wchar_t *absolute = malloc((size_t)needed * sizeof *absolute);
@@ -93,14 +93,14 @@ FilekitResult fk_wide_string(const char *s, int filesystem, wchar_t **out) {
         free(w);
         free(full);
         free(absolute);
-        return fk_result(FILEKIT_OUT_OF_MEMORY, "Cannot allocate Unicode path.");
+        return arc_fs_result(ARC_FS_OUT_OF_MEMORY, "Cannot allocate Unicode path.");
     }
     DWORD written = GetFullPathNameW(w, needed, absolute, NULL);
     free(w);
     if (!written || written >= needed) {
         free(full);
         free(absolute);
-        return fk_result(FILEKIT_INVALID_PATH, "Cannot resolve '%s'.", s);
+        return arc_fs_result(ARC_FS_INVALID_PATH, "Cannot resolve '%s'.", s);
     }
     if (wcsncmp(absolute, L"\\\\?\\", 4) == 0)
         wcscpy(full, absolute);
@@ -113,26 +113,25 @@ FilekitResult fk_wide_string(const char *s, int filesystem, wchar_t **out) {
     }
     free(absolute);
     *out = full;
-    return fk_okay();
+    return arc_fs_okay();
 }
 
-FilekitResult fk_utf8_string(const wchar_t *w, char **out) {
+ArcFsResult arc_fs_utf8_string(const wchar_t *w, char **out) {
     int n = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, w, -1, NULL, 0, NULL, NULL);
     if (!n)
-        return fk_result(FILEKIT_INVALID_PATH, "Unrepresentable Unicode name.");
+        return arc_fs_result(ARC_FS_INVALID_PATH, "Unrepresentable Unicode name.");
     char *s = malloc((size_t)n);
     if (!s)
-        return fk_result(FILEKIT_OUT_OF_MEMORY, "Cannot allocate name.");
+        return arc_fs_result(ARC_FS_OUT_OF_MEMORY, "Cannot allocate name.");
     WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, w, -1, s, n, NULL, NULL);
     *out = s;
-    return fk_okay();
+    return arc_fs_okay();
 }
 
-FilekitResult fk_windows_error(const char *op, const char *path) {
+ArcFsResult arc_fs_windows_error(const char *op, const char *path) {
     DWORD e = GetLastError();
-    FilekitCode c = (e == ERROR_ALREADY_EXISTS || e == ERROR_FILE_EXISTS) ? FILEKIT_ALREADY_EXISTS
-                    : (e == ERROR_NOT_SUPPORTED || e == ERROR_INVALID_FUNCTION)
-                        ? FILEKIT_UNSUPPORTED
-                        : FILEKIT_IO_ERROR;
-    return fk_result(c, "%s '%s': Windows error %lu.", op, path, (unsigned long)e);
+    ArcFsCode c = (e == ERROR_ALREADY_EXISTS || e == ERROR_FILE_EXISTS) ? ARC_FS_ALREADY_EXISTS
+                  : (e == ERROR_NOT_SUPPORTED || e == ERROR_INVALID_FUNCTION) ? ARC_FS_UNSUPPORTED
+                                                                              : ARC_FS_IO_ERROR;
+    return arc_fs_result(c, "%s '%s': Windows error %lu.", op, path, (unsigned long)e);
 }

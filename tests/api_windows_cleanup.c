@@ -1,6 +1,6 @@
 #ifdef _WIN32
 #include "arc.h"
-#include "filekit/filekit.h"
+#include "fs/fs.h"
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -28,17 +28,17 @@ static BOOL WINAPI delete_output(LPCWSTR path) {
 }
 
 /* Substitute only the failing native boundaries; creation and handle closing
- * remain real Win32 operations in the production filekit implementation. */
+ * remain real Win32 operations in the production fs implementation. */
 #define _open_osfhandle fail_descriptor
 #define DeleteFileW delete_output
-#include "filekit/file_system_windows.c"
+#include "fs/file_system_windows.c"
 #undef DeleteFileW
 #undef _open_osfhandle
 
 int main(void) {
     int descriptor = 123;
-    FilekitResult f = filekit_create_file_exclusive("rolled-back", 0600, &descriptor);
-    assert(f.code == FILEKIT_IO_ERROR && descriptor == 123);
+    ArcFsResult f = arc_fs_create_file_exclusive("rolled-back", 0600, &descriptor);
+    assert(f.code == ARC_FS_IO_ERROR && descriptor == 123);
     assert(GetFileAttributesW(L"rolled-back") == INVALID_FILE_ATTRIBUTES);
     ArcWriter *writer = NULL;
     ArcResult r = arc_create("rolled-back.tar", &writer);

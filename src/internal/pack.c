@@ -30,7 +30,7 @@ static ArcResult source_name(const char *source, int directory, char **out) {
     ArcResult r = ar_okay();
     if (directory && (!strcmp(name, ".") || !strcmp(name, ".."))) {
 #ifdef _WIN32
-        r = ar_from_filekit(filekit_absolute_path(source, &absolute));
+        r = ar_from_fs(arc_fs_absolute_path(source, &absolute));
 #else
         absolute = realpath(source, NULL);
         if (!absolute)
@@ -77,8 +77,8 @@ ArcResult arc_pack_ex(const char *path, const char *const *sources, size_t count
 #endif
             source[--n] = 0;
         }
-        FilekitInfo info = {0};
-        r = ar_from_filekit(filekit_info(source, &info));
+        ArcFsInfo info = {0};
+        r = ar_from_fs(arc_fs_info(source, &info));
         if (!ar_failed(r) && !info.exists)
             r = ar_result(ARC_NOT_FOUND, "Source not found: '%s'.", source);
         int directory = info.directory && !info.symbolic;

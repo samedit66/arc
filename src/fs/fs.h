@@ -1,5 +1,16 @@
-#ifndef FILEKIT_H
-#define FILEKIT_H
+/*
+ * Internal filesystem module for Arc.
+ *
+ * Provides UTF-8 path operations, file metadata and identity, exclusive
+ * creation, links, and metadata updates through native platform APIs.
+ * It has no archive-format knowledge and does not change the locale.
+ *
+ * This header is shared by Arc implementation modules and is not part
+ * of the installed public API. Individual operations define ownership
+ * and error-handling requirements below.
+ */
+#ifndef ARC_FS_H
+#define ARC_FS_H
 #include <stddef.h>
 #include <stdint.h>
 #ifdef __cplusplus
@@ -7,38 +18,38 @@ extern "C" {
 #endif
 /** Independent errors; diagnostics are owned, bounded, and never parsed by callers. */
 typedef enum {
-    FILEKIT_OK = 0,
-    FILEKIT_INVALID_ARGUMENT,
-    FILEKIT_INVALID_PATH,
-    FILEKIT_ALREADY_EXISTS,
-    FILEKIT_UNSUPPORTED,
-    FILEKIT_OVERFLOW,
-    FILEKIT_OUT_OF_MEMORY,
-    FILEKIT_IO_ERROR
-} FilekitCode;
+    ARC_FS_OK = 0,
+    ARC_FS_INVALID_ARGUMENT,
+    ARC_FS_INVALID_PATH,
+    ARC_FS_ALREADY_EXISTS,
+    ARC_FS_UNSUPPORTED,
+    ARC_FS_OVERFLOW,
+    ARC_FS_OUT_OF_MEMORY,
+    ARC_FS_IO_ERROR
+} ArcFsCode;
 
 typedef struct {
-    FilekitCode code;
+    ArcFsCode code;
     char message[256];
-} FilekitResult;
+} ArcFsResult;
 
 /** Opaque native identity value. Only compare identities from the same host. */
 typedef struct {
     uint64_t key[2];
-} FilekitIdentity;
+} ArcFsIdentity;
 
 typedef struct {
-    FilekitIdentity identity;
+    ArcFsIdentity identity;
     uint64_t size;
     unsigned mode;
     int exists, directory, symbolic;
-} FilekitInfo;
+} ArcFsInfo;
 
 typedef enum {
-    FILEKIT_LINK_UNKNOWN = 0,
-    FILEKIT_LINK_FILE = 1,
-    FILEKIT_LINK_DIRECTORY = 2
-} FilekitLinkKind;
+    ARC_FS_LINK_UNKNOWN = 0,
+    ARC_FS_LINK_FILE = 1,
+    ARC_FS_LINK_DIRECTORY = 2
+} ArcFsLinkKind;
 
 /** All paths are nonempty UTF-8. Outputs remain unchanged on failure.
  * Returned strings must be freed with free(). No operation changes locale.
@@ -57,11 +68,11 @@ typedef enum {
  *
  * Example:
  * ```c
- * FilekitInfo info = {0};
- * FilekitResult result = filekit_info("hello.txt", &info);
+ * ArcFsInfo info = {0};
+ * ArcFsResult result = arc_fs_info("hello.txt", &info);
  * ```
  */
-FilekitResult filekit_info(const char *path, FilekitInfo *out);
+ArcFsResult arc_fs_info(const char *path, ArcFsInfo *out);
 /**
  * Check whether two existing objects have the same native identity.
  *
@@ -72,11 +83,11 @@ FilekitResult filekit_info(const char *path, FilekitInfo *out);
  *
  * Example:
  * ```c
- * // first and second are FilekitInfo values inspected on this host.
- * int same = filekit_same_identity(first, second);
+ * // first and second are ArcFsInfo values inspected on this host.
+ * int same = arc_fs_same_identity(first, second);
  * ```
  */
-int filekit_same_identity(FilekitInfo a, FilekitInfo b);
+int arc_fs_same_identity(ArcFsInfo a, ArcFsInfo b);
 /**
  * Order two native identities on the same host.
  *
@@ -87,11 +98,11 @@ int filekit_same_identity(FilekitInfo a, FilekitInfo b);
  *
  * Example:
  * ```c
- * // first and second are FilekitInfo values inspected on this host.
- * int order = filekit_compare_identity(first.identity, second.identity);
+ * // first and second are ArcFsInfo values inspected on this host.
+ * int order = arc_fs_compare_identity(first.identity, second.identity);
  * ```
  */
-int filekit_compare_identity(FilekitIdentity a, FilekitIdentity b);
+int arc_fs_compare_identity(ArcFsIdentity a, ArcFsIdentity b);
 /**
  * Anchor a path to the current directory.
  *
@@ -104,13 +115,13 @@ int filekit_compare_identity(FilekitIdentity a, FilekitIdentity b);
  * Example:
  * ```c
  * char *absolute = NULL;
- * FilekitResult result = filekit_absolute_path("hello.txt", &absolute);
- * if (result.code == FILEKIT_OK) {
+ * ArcFsResult result = arc_fs_absolute_path("hello.txt", &absolute);
+ * if (result.code == ARC_FS_OK) {
  *     free(absolute); // Include <stdlib.h>.
  * }
  * ```
  */
-FilekitResult filekit_absolute_path(const char *path, char **out);
+ArcFsResult arc_fs_absolute_path(const char *path, char **out);
 /**
  * Create a writable file without overwriting an existing object.
  *
@@ -126,13 +137,13 @@ FilekitResult filekit_absolute_path(const char *path, char **out);
  * Example:
  * ```c
  * int fd;
- * FilekitResult result = filekit_create_file_exclusive("hello.txt", 0644, &fd);
- * if (result.code == FILEKIT_OK) {
- *     result = filekit_close(fd, "hello.txt");
+ * ArcFsResult result = arc_fs_create_file_exclusive("hello.txt", 0644, &fd);
+ * if (result.code == ARC_FS_OK) {
+ *     result = arc_fs_close(fd, "hello.txt");
  * }
  * ```
  */
-FilekitResult filekit_create_file_exclusive(const char *path, unsigned mode, int *out);
+ArcFsResult arc_fs_create_file_exclusive(const char *path, unsigned mode, int *out);
 /**
  * Write all supplied bytes to an open descriptor.
  *
@@ -145,10 +156,10 @@ FilekitResult filekit_create_file_exclusive(const char *path, unsigned mode, int
  * Example:
  * ```c
  * // fd is an open writable descriptor.
- * FilekitResult result = filekit_write_all(fd, "hello", 5);
+ * ArcFsResult result = arc_fs_write_all(fd, "hello", 5);
  * ```
  */
-FilekitResult filekit_write_all(int fd, const void *data, size_t n);
+ArcFsResult arc_fs_write_all(int fd, const void *data, size_t n);
 /**
  * Close and consume a descriptor, including on failure.
  *
@@ -160,10 +171,10 @@ FilekitResult filekit_write_all(int fd, const void *data, size_t n);
  * Example:
  * ```c
  * // fd is an owned open descriptor.
- * FilekitResult result = filekit_close(fd, "hello.txt");
+ * ArcFsResult result = arc_fs_close(fd, "hello.txt");
  * ```
  */
-FilekitResult filekit_close(int fd, const char *path);
+ArcFsResult arc_fs_close(int fd, const char *path);
 /**
  * Remove a file or a file symbolic link.
  *
@@ -173,10 +184,10 @@ FilekitResult filekit_close(int fd, const char *path);
  *
  * Example:
  * ```c
- * FilekitResult result = filekit_remove_file("hello.txt");
+ * ArcFsResult result = arc_fs_remove_file("hello.txt");
  * ```
  */
-FilekitResult filekit_remove_file(const char *path);
+ArcFsResult arc_fs_remove_file(const char *path);
 /**
  * Create a directory without reusing an existing object.
  *
@@ -185,10 +196,10 @@ FilekitResult filekit_remove_file(const char *path);
  *
  * Example:
  * ```c
- * FilekitResult result = filekit_create_directory_exclusive("docs", 0755);
+ * ArcFsResult result = arc_fs_create_directory_exclusive("docs", 0755);
  * ```
  */
-FilekitResult filekit_create_directory_exclusive(const char *path, unsigned mode);
+ArcFsResult arc_fs_create_directory_exclusive(const char *path, unsigned mode);
 /**
  * Remove disallowed POSIX permission bits from a file or directory.
  *
@@ -201,10 +212,10 @@ FilekitResult filekit_create_directory_exclusive(const char *path, unsigned mode
  *
  * Example:
  * ```c
- * FilekitResult result = filekit_restrict_permissions("hello.txt", 0600);
+ * ArcFsResult result = arc_fs_restrict_permissions("hello.txt", 0600);
  * ```
  */
-FilekitResult filekit_restrict_permissions(const char *path, unsigned allowed_mode);
+ArcFsResult arc_fs_restrict_permissions(const char *path, unsigned allowed_mode);
 /**
  * Set modification time without following the final symbolic link.
  *
@@ -217,10 +228,10 @@ FilekitResult filekit_restrict_permissions(const char *path, unsigned allowed_mo
  *
  * Example:
  * ```c
- * FilekitResult result = filekit_set_mtime("hello.txt", 1700000000, 0);
+ * ArcFsResult result = arc_fs_set_mtime("hello.txt", 1700000000, 0);
  * ```
  */
-FilekitResult filekit_set_mtime(const char *path, int64_t seconds, long nanoseconds);
+ArcFsResult arc_fs_set_mtime(const char *path, int64_t seconds, long nanoseconds);
 /**
  * Create a hard link to an existing file.
  *
@@ -229,28 +240,27 @@ FilekitResult filekit_set_mtime(const char *path, int64_t seconds, long nanoseco
  *
  * Example:
  * ```c
- * FilekitResult result = filekit_create_hard_link("hello.txt", "alias.txt");
+ * ArcFsResult result = arc_fs_create_hard_link("hello.txt", "alias.txt");
  * ```
  */
-FilekitResult filekit_create_hard_link(const char *target, const char *name);
+ArcFsResult arc_fs_create_hard_link(const char *target, const char *name);
 /**
  * Create a symbolic link containing the supplied target text.
  *
  * - `name`: New UTF-8 link path; parent must exist.
- * - `target`: UTF-8 link text; not resolved by filekit.
+ * - `target`: UTF-8 link text; not resolved by fs.
  * - `kind`: Target kind required on Windows; ignored on POSIX.
  *
- * Target is UTF-8 link text, never resolved by filekit. Windows requires kind
+ * Target is UTF-8 link text, never resolved by fs. Windows requires kind
  * FILE or DIRECTORY and may require privileges; POSIX ignores kind.
  *
  * Example:
  * ```c
- * FilekitResult result = filekit_create_symbolic_link("alias.txt", "hello.txt",
- *                                                    FILEKIT_LINK_FILE);
+ * ArcFsResult result = arc_fs_create_symbolic_link("alias.txt", "hello.txt",
+ *                                                    ARC_FS_LINK_FILE);
  * ```
  */
-FilekitResult filekit_create_symbolic_link(const char *name, const char *target,
-                                           FilekitLinkKind kind);
+ArcFsResult arc_fs_create_symbolic_link(const char *name, const char *target, ArcFsLinkKind kind);
 #ifdef __cplusplus
 }
 #endif

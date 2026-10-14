@@ -45,7 +45,7 @@ dir = "{{config_root}}"
 
 [tasks.check]
 description = "Build and test arc, then check C formatting"
-depends = ["test", "filekit:verify", "consumers"]
+depends = ["test", "consumers"]
 shell = "bash -euo pipefail -c"
 run = "bash scripts/format.sh --check"
 dir = "{{config_root}}"
@@ -67,19 +67,6 @@ description = "Build and run arc with forwarded arguments"
 depends = ["build"]
 shell = "bash -euo pipefail -c"
 run = "bash scripts/run.sh"
-dir = "{{config_root}}"
-
-[tasks."filekit:build"]
-description = "Build filekit independently"
-shell = "bash -euo pipefail -c"
-run = "bash filekit/build.sh"
-dir = "{{config_root}}"
-
-[tasks."filekit:verify"]
-description = "Run filekit's independent API and build checks"
-depends = ["filekit:build"]
-shell = "bash -euo pipefail -c"
-run = "python filekit/verify.py"
 dir = "{{config_root}}"
 
 [tasks.consumers]

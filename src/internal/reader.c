@@ -174,8 +174,8 @@ ArcResult arc_list_impl(const char *path, const ArcReadOptions *options, ArcVisi
 ArcResult arc_get_size_impl(const char *path, uint64_t *out) {
     if (!path || !out)
         return ar_result(ARC_INVALID_ARGUMENT, "Missing size argument.");
-    FilekitInfo i = {0};
-    ArcResult r = ar_from_filekit(filekit_info(path, &i));
+    ArcFsInfo i = {0};
+    ArcResult r = ar_from_fs(arc_fs_info(path, &i));
     if (ar_failed(r))
         return r;
     if (!i.exists || i.directory || i.symbolic)

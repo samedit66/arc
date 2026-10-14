@@ -4,7 +4,7 @@
 #define _DEFAULT_SOURCE 1
 #endif
 #include "arc.h"
-#include "filekit/filekit.h"
+#include "fs/fs.h"
 #include <archive.h>
 #include <assert.h>
 #include <errno.h>
@@ -22,18 +22,18 @@ static int close_archive(struct archive *archive) {
     return status;
 }
 
-static FilekitResult remove_output(const char *path) {
+static ArcFsResult remove_output(const char *path) {
     if (fail_remove)
-        return (FilekitResult){FILEKIT_IO_ERROR, "Injected removal failure."};
-    return filekit_remove_file(path);
+        return (ArcFsResult){ARC_FS_IO_ERROR, "Injected removal failure."};
+    return arc_fs_remove_file(path);
 }
 
 /* Exercise real writer ownership/cleanup, substituting only the failing effects. */
 #define archive_write_close close_archive
-#define filekit_remove_file remove_output
+#define arc_fs_remove_file remove_output
 #include "internal/writer.c"
 #undef archive_write_close
-#undef filekit_remove_file
+#undef arc_fs_remove_file
 
 int main(void) {
     FILE *source = fopen("source", "wb");
@@ -55,8 +55,8 @@ int main(void) {
     assert(result.partial_output && !strcmp(result.path, "source"));
     assert(strstr(result.cleanup_message, "Injected removal"));
     fail_remove = 0;
-    assert(filekit_remove_file("leftover.tar").code == FILEKIT_OK);
-    assert(filekit_remove_file("conflict.tar").code == FILEKIT_OK);
+    assert(arc_fs_remove_file("leftover.tar").code == ARC_FS_OK);
+    assert(arc_fs_remove_file("conflict.tar").code == ARC_FS_OK);
     puts("Pack finalization and cleanup failures passed.");
     return 0;
 }
