@@ -108,8 +108,7 @@ def test_safe_symbolic_link_chain(arc, make_tar, tmp_path, symlinks_available):
 
 
 @pytest.mark.parametrize("case", [
-    "traversal", "absolute", "external-link", "absolute-link", "link-parent",
-    "link-cycle", "missing-hard", "hard-cycle", "duplicate-file", "special",
+    "traversal", "absolute", "link-parent", "missing-hard", "hard-cycle", "duplicate-file", "special",
 ])
 def test_unsafe_archive_is_rejected(arc, make_tar, tmp_path, case):
     outside = tmp_path / "outside"
@@ -119,10 +118,7 @@ def test_unsafe_archive_is_rejected(arc, make_tar, tmp_path, case):
     records = {
         "traversal": [file_entry("../outside/sentinel", b"bad")],
         "absolute": [file_entry(sentinel.as_posix(), b"bad")],
-        "external-link": [link_entry("escape", "../outside/sentinel")],
-        "absolute-link": [link_entry("escape", sentinel.as_posix())],
         "link-parent": [link_entry("redirect", "."), file_entry("redirect/file", b"bad")],
-        "link-cycle": [link_entry("a", "b"), link_entry("b", "a")],
         "missing-hard": [link_entry("a", "absent", hard=True)],
         "hard-cycle": [link_entry("a", "b", hard=True), link_entry("b", "a", hard=True)],
         "duplicate-file": [file_entry("a", b"one"), file_entry("a", b"two")],
@@ -204,3 +200,93 @@ def test_windows_long_unicode_paths(arc, tmp_path, extended_prefix):
         destination = Path(str(destination).removeprefix("\\\\?\\"))
     arc("unpack", archive, destination)
     assert (parent / "output/текст").read_bytes() == b"long path"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX untyped symbolic links")
+@pytest.mark.parametrize("suffix", ["tar", "zip"])
+def test_symbolic_targets_preserved(arc, make_tar, tmp_path, suffix):
+    import stat
+    import zipfile
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "sentinel"
+    sentinel.write_bytes(b"keep")
+    targets = {
+        "absolute": sentinel.as_posix(), "external": "../outside/sentinel",
+        "dangling": "missing", "self": "self", "a": "b", "b": "a",
+        "through-file": "value/child", "spelling": "./missing/../value",
+    }
+    (outside / "existing").symlink_to("sentinel")
+    targets["existing-link"] = "../outside/existing"
+    if suffix == "tar":
+        archive = make_tar([file_entry("value"), *[
+            link_entry(name, target) for name, target in targets.items()
+        ]])
+    else:
+        archive = tmp_path / "input.zip"
+        with zipfile.ZipFile(archive, "w") as output:
+            output.writestr("value", b"data")
+            for name, target in targets.items():
+                entry = zipfile.ZipInfo(name)
+                entry.create_system = 3
+                entry.external_attr = (stat.S_IFLNK | 0o777) << 16
+                output.writestr(entry, target)
+    arc("unpack", archive, "output")
+    for name, target in targets.items():
+        assert os.readlink(tmp_path / "output" / name) == target
+    assert sentinel.read_bytes() == b"keep"
+    assert set(outside.iterdir()) == {sentinel, outside / "existing"}
+
+
+@pytest.mark.parametrize("link_first", [True, False])
+def test_external_link_cannot_be_parent(arc, make_tar, tmp_path, link_first):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "sentinel"
+    sentinel.write_bytes(b"keep")
+    records = [link_entry("redirect", "../outside"), file_entry("redirect/sentinel", b"bad")]
+    archive = make_tar(records if link_first else records[::-1])
+    arc("unpack", archive, "output", success=False)
+    assert sentinel.read_bytes() == b"keep"
+    assert set(outside.iterdir()) == {sentinel}
+
+
+def test_existing_dangling_link_is_not_overwritten(arc, make_tar, tmp_path, symlinks_available):
+    output = tmp_path / "output"
+    output.mkdir()
+    (output / "alias").symlink_to("missing")
+    archive = make_tar([link_entry("alias", "value"), file_entry("value")])
+    arc("unpack", archive, output, success=False)
+    assert os.readlink(output / "alias") == "missing"
+
+
+def test_internal_directory_symbolic_links(arc, make_tar, tmp_path, symlinks_available):
+    archive = make_tar([
+        link_entry("alias", "sub"), link_entry("chain", "alias"),
+        link_entry("relative", "alias/../value"), file_entry("sub/child"),
+        file_entry("value", b"safe"),
+    ])
+    arc("unpack", archive, "output")
+    assert (tmp_path / "output/chain/child").read_bytes() == b"data"
+    assert (tmp_path / "output/relative").read_bytes() == b"safe"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows requires known link types")
+@pytest.mark.parametrize("target", ["../outside", "/outside", "alias", "value/child"])
+def test_windows_unknown_symbolic_kind(arc, make_tar, target):
+    archive = make_tar([link_entry("alias", target), file_entry("value")])
+    result = arc("unpack", archive, "output", success=False)
+    assert "Unknown Windows link target type" in result.stderr
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows type inference uses archive records")
+def test_windows_link_kind_does_not_use_existing_target(arc, make_tar, tmp_path):
+    output = tmp_path / "output"
+    output.mkdir()
+    (output / "existing").write_bytes(b"keep")
+    archive = make_tar([link_entry("alias", "existing")])
+    result = arc("unpack", archive, output, success=False)
+    assert "Unknown Windows link target type" in result.stderr
+    assert (output / "existing").read_bytes() == b"keep"
+    assert not (output / "alias").is_symlink()

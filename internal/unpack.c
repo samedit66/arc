@@ -17,6 +17,9 @@ typedef struct {
     struct archive_entry *metadata;
     ArcEntryType type;
     int created, resolving, resolved_kind, link_kind;
+#ifdef _WIN32
+    int resolved_opaque;
+#endif
 } ExtractItem;
 
 typedef struct {
@@ -314,6 +317,7 @@ static ArcResult hard_links(ExtractIndex *index, const char *root, int selective
     return r;
 }
 
+#ifdef _WIN32
 static void pop_component(char *path) {
     char *s = strrchr(path, '/');
     if (s)
@@ -325,16 +329,16 @@ static void pop_component(char *path) {
 typedef struct {
     size_t record, waiting;
     char *current, *text, *cursor;
-    int kind, dangling;
+    int kind, dangling, opaque;
 } SymbolicFrame;
 
 static ArcResult push_symbolic(ExtractIndex *index, size_t record, SymbolicFrame **frames,
                                size_t *depth, size_t *capacity) {
     ExtractItem *p = &index->items[record];
     if (p->resolving)
-        return ar_result(ARC_INVALID_PATH, "Cyclic symbolic link '%s'.", p->name);
+        return ar_result(ARC_UNSUPPORTED, "Unknown Windows link target type '%s'.", p->name);
     if (!p->target || !*p->target || !ar_valid_utf8(p->target) || p->target[0] == '/')
-        return ar_result(ARC_INVALID_PATH, "Absolute or invalid symbolic-link target.");
+        return ar_result(ARC_UNSUPPORTED, "Unknown Windows link target type '%s'.", p->name);
     if (!platform_link_target_compatible(p->target))
         return ar_result(ARC_INVALID_PATH, "Incompatible Windows link target '%s'.", p->target);
     if (*depth == *capacity) {
@@ -366,7 +370,7 @@ static ArcResult push_symbolic(ExtractIndex *index, size_t record, SymbolicFrame
 static ArcResult symbolic_step(SymbolicFrame *f, char *candidate, int kind) {
     if (kind == 1 && f->cursor) {
         free(candidate);
-        return ar_result(ARC_INVALID_PATH, "Link target traverses an ordinary file.");
+        return ar_result(ARC_UNSUPPORTED, "Unknown Windows link target type.");
     }
     free(f->current);
     f->current = candidate;
@@ -376,7 +380,7 @@ static ArcResult symbolic_step(SymbolicFrame *f, char *candidate, int kind) {
     return ar_okay();
 }
 
-static ArcResult resolve_symbolic(ExtractIndex *index, const char *root, ExtractItem *p) {
+static ArcResult resolve_symbolic(ExtractIndex *index, ExtractItem *p) {
     if (p->resolved)
         return ar_okay();
     SymbolicFrame *frames = NULL;
@@ -386,6 +390,11 @@ static ArcResult resolve_symbolic(ExtractIndex *index, const char *root, Extract
         SymbolicFrame *f = &frames[depth - 1];
         if (f->waiting != SIZE_MAX) {
             ExtractItem *child = &index->items[f->waiting];
+            if (child->resolved_opaque && f->cursor) {
+                r = ar_result(ARC_UNSUPPORTED, "Unknown Windows link target type '%s'.", p->name);
+                break;
+            }
+            f->opaque = child->resolved_opaque;
             char *candidate = NULL;
             r = ar_copy_string(child->resolved, &candidate);
             if (!ar_failed(r))
@@ -397,6 +406,7 @@ static ArcResult resolve_symbolic(ExtractIndex *index, const char *root, Extract
             ExtractItem *item = &index->items[f->record];
             item->resolved = f->current;
             item->resolved_kind = f->dangling ? 0 : f->kind;
+            item->resolved_opaque = f->opaque;
             item->resolving = 0;
             free(f->text);
             --depth;
@@ -411,7 +421,7 @@ static ArcResult resolve_symbolic(ExtractIndex *index, const char *root, Extract
             continue;
         if (!strcmp(segment, "..")) {
             if (!*f->current) {
-                r = ar_result(ARC_INVALID_PATH, "Symbolic link escapes destination.");
+                r = ar_result(ARC_UNSUPPORTED, "Unknown Windows link target type '%s'.", p->name);
                 break;
             }
             pop_component(f->current);
@@ -431,25 +441,29 @@ static ArcResult resolve_symbolic(ExtractIndex *index, const char *root, Extract
             break;
         }
         if (child && child->type == ARC_ENTRY_SYMBOLIC_LINK) {
+            if (!f->cursor && (child->link_kind == AE_SYMLINK_TYPE_FILE ||
+                               child->link_kind == AE_SYMLINK_TYPE_DIRECTORY)) {
+                /* Metadata supplies a kind, not a resolved path for later traversal. */
+                f->opaque = 1;
+                r = symbolic_step(f, candidate,
+                                  child->link_kind == AE_SYMLINK_TYPE_DIRECTORY
+                                      ? FILEKIT_LINK_DIRECTORY
+                                      : FILEKIT_LINK_FILE);
+                continue;
+            }
             free(candidate);
             f->waiting = (size_t)(child - index->items);
             if (!child->resolved)
                 r = push_symbolic(index, f->waiting, &frames, &depth, &capacity);
             continue; /* push may realloc frames; reacquire the frame next iteration. */
         }
-        char *full = NULL;
-        FilekitInfo info = {0};
-        r = ar_join(root, candidate, &full);
-        if (!ar_failed(r))
-            r = ar_from_filekit(filekit_info(full, &info));
-        free(full);
-        if (!ar_failed(r) && info.symbolic)
-            r = ar_result(ARC_INVALID_PATH, "Link target crosses an existing link '%s'.",
-                          candidate);
-        if (!ar_failed(r))
-            r = symbolic_step(f, candidate, !info.exists ? 0 : info.directory ? 2 : 1);
-        else
-            free(candidate);
+        /* Infer the native link kind only from selected archive records. */
+        int kind = !*candidate || (child && child->type == ARC_ENTRY_DIRECTORY)
+                       ? FILEKIT_LINK_DIRECTORY
+                   : child && (child->type == ARC_ENTRY_FILE || child->type == ARC_ENTRY_HARD_LINK)
+                       ? FILEKIT_LINK_FILE
+                       : FILEKIT_LINK_UNKNOWN;
+        r = symbolic_step(f, candidate, kind);
     }
     while (depth) {
         SymbolicFrame *f = &frames[--depth];
@@ -460,6 +474,8 @@ static ArcResult resolve_symbolic(ExtractIndex *index, const char *root, Extract
     free(frames);
     return r;
 }
+
+#endif
 
 static ArcResult extract_entry(ExtractIndex *index, const char *root, struct archive *a,
                                struct archive_entry *e) {
@@ -698,9 +714,19 @@ ArcResult arc_unpack_impl(const char *path, const char *root, const ArcExtractOp
             r = ar_result(ARC_NOT_FOUND, "Selected path not found: '%s'.", selection.items[i].path);
     if (!ar_failed(r))
         r = hard_links(&index, root, selection.count != 0);
-    for (size_t i = 0; i < index.count && !ar_failed(r); ++i)
-        if (index.items[i].type == ARC_ENTRY_SYMBOLIC_LINK)
-            r = resolve_symbolic(&index, root, &index.items[i]);
+    for (size_t i = 0; i < index.count && !ar_failed(r); ++i) {
+        ExtractItem *p = &index.items[i];
+        if (p->type != ARC_ENTRY_SYMBOLIC_LINK)
+            continue;
+        if (!p->target || !*p->target || !ar_valid_utf8(p->target))
+            r = ar_result(ARC_INVALID_PATH, "Missing or invalid symbolic-link target.");
+        else if (!platform_link_target_compatible(p->target))
+            r = ar_result(ARC_INVALID_PATH, "Incompatible Windows link target '%s'.", p->target);
+#ifdef _WIN32
+        else if (p->link_kind != AE_SYMLINK_TYPE_DIRECTORY && p->link_kind != AE_SYMLINK_TYPE_FILE)
+            r = resolve_symbolic(&index, p);
+#endif
+    }
     for (size_t i = 0; i < index.count && !ar_failed(r); ++i) {
         ExtractItem *p = &index.items[i];
         if (p->type != ARC_ENTRY_SYMBOLIC_LINK)
@@ -710,10 +736,9 @@ ArcResult arc_unpack_impl(const char *path, const char *root, const ArcExtractOp
         if (!ar_failed(r))
             r = ar_from_filekit(filekit_create_symbolic_link(
                 full, p->target,
-                p->resolved_kind                            ? (FilekitLinkKind)p->resolved_kind
-                : p->link_kind == AE_SYMLINK_TYPE_DIRECTORY ? FILEKIT_LINK_DIRECTORY
-                : p->link_kind == AE_SYMLINK_TYPE_FILE      ? FILEKIT_LINK_FILE
-                                                            : FILEKIT_LINK_UNKNOWN));
+                p->link_kind == AE_SYMLINK_TYPE_DIRECTORY ? FILEKIT_LINK_DIRECTORY
+                : p->link_kind == AE_SYMLINK_TYPE_FILE    ? FILEKIT_LINK_FILE
+                                                          : (FilekitLinkKind)p->resolved_kind));
         if (r.code == ARC_ALREADY_EXISTS)
             r = ar_diagnostic(r, ARC_REASON_ENTRY_EXISTS, full);
         if (!ar_failed(r))

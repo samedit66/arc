@@ -117,3 +117,11 @@ def test_unselected_directory_metadata_is_not_applied(arc, make_tar, tmp_path):
     assert directory.stat().st_mtime != 123
     if os.name != "nt":
         assert directory.stat().st_mode & 0o700 != 0
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX untyped symbolic links")
+def test_selected_external_symbolic_link(arc, make_tar, tmp_path):
+    archive = make_tar([link_entry("alias", "../outside"), file_entry("value")])
+    arc("unpack", "--entry", "alias", archive, "output")
+    assert os.readlink(tmp_path / "output/alias") == "../outside"
+    assert not (tmp_path / "output/value").exists()

@@ -1,3 +1,7 @@
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L
+#include <unistd.h>
+#endif
 #include "arc.h"
 #include <assert.h>
 #include <stdio.h>
@@ -97,6 +101,14 @@ int main(void) {
     assert(result.reason == ARC_REASON_ARCHIVE_CONFLICT && result.path_truncated);
     assert(strlen(result.path) < sizeof result.path);
     assert(arc_discard(&writer).code == ARC_OK);
+#ifndef _WIN32
+    assert(symlink("../outside", "external-alias") == 0);
+    assert(arc_pack("external.tar", "external-alias").code == ARC_OK);
+    assert(arc_unpack("external.tar", "external-out").code == ARC_OK);
+    char target[64];
+    ssize_t length = readlink("external-out/external-alias", target, sizeof target);
+    assert(length == 10 && !memcmp(target, "../outside", 10));
+#endif
     puts("Public arc API checks passed.");
     return 0;
 }

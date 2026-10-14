@@ -168,8 +168,8 @@ typedef struct {
     /** Remove the single common root directory. Preflight all entry names before
      * creating the destination; reject empty/mixed-root archives and root files.
      * Selectors refer to original paths. Hard-link paths are transformed;
-     * relative symlink text is preserved and validated in the new destination.
-     * Links escaping the stripped tree are rejected. Root metadata is omitted.
+     * symlink text is preserved without resolving its target.
+     * Hard links escaping the stripped tree are rejected. Root metadata is omitted.
      * Requires a second metadata pass; compressed input may be decompressed twice. */
     int strip_root;
 } ArcExtractOptions;
@@ -444,7 +444,11 @@ ArcResult arc_discard(ArcWriter **writer);
  * Detects format from content. Supports ordinary files, directories and
  * permitted symbolic/hard links. Rejects
  * unsafe paths, special files, file collisions and traversal through links.
- * Creates deferred links after data extraction and validates their targets.
+ * Creates deferred links after data extraction. Symbolic-link targets are
+ * preserved without filesystem lookup; absolute, external, dangling and cyclic
+ * targets are permitted on POSIX. Windows requires a known file/directory kind,
+ * supplied by archive metadata or inferred from selected archive records.
+ * Unknown Windows kinds return UNSUPPORTED. Hard-link targets are validated.
  * Restores supported metadata on new objects. Does not apply archive metadata
  * to existing directories or restore ownership. Creating children may change
  * existing directory timestamps through normal filesystem behavior.
@@ -470,7 +474,7 @@ ArcResult arc_unpack(const char *archive_path, const char *destination);
  * directory records supply metadata. An unmatched selector returns NOT_FOUND.
  * A selected hard link requires its complete target chain in the selection;
  * an absent target returns SELECTION_ERROR. Symlink targets are not added
- * implicitly; safe dangling links follow the existing platform restrictions.
+ * implicitly; dangling links follow the existing platform restrictions.
  * Without strip_root, unselected paths/types are not extraction-validated;
  * strip_root checks every entry name during preflight. Unreadable headers,
  * names or skipped data can still fail the operation. Encrypted selected

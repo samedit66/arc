@@ -32,7 +32,8 @@ must share one root directory; mixed roots, root-level files and empty archives
 are rejected before creating the destination. A lone empty root creates an empty
 destination. Selection with `--entry` still uses original names such as
 `project/src`. Hard-link targets are adjusted; relative symbolic-link text is
-preserved and checked in the stripped tree. Links that escape it are rejected.
+preserved without resolving the target, even when it points outside the stripped
+tree. Hard links that escape it are rejected.
 The extra metadata pass can require decompressing compressed input again.
 
 ### Creating archives
@@ -204,7 +205,7 @@ A writer belongs to the caller until `arc_close` or `arc_discard`. Both consume 
 
 Reading does not require extraction. `arc_list` visits entry metadata, while the `arc_reader_*` functions let you read entry data in chunks. `arc_inspect` returns sizes and counts, and `arc_verify` reads the contents to check them.
 
-To extract everything, use `arc_unpack`; to select paths, use `arc_unpack_ex`. Neither overwrites existing files or links. Unsafe paths and traversal through links are rejected. A failed extraction may leave partial output.
+To extract everything, use `arc_unpack`; to select paths, use `arc_unpack_ex`. Neither overwrites existing files or links. Unsafe paths and traversal through links are rejected. Symbolic-link targets are preserved without filesystem lookup; on POSIX they may be absolute, external, dangling or cyclic. Windows requires a file/directory kind from archive metadata or selected archive records; an unknown kind returns `ARC_UNSUPPORTED`. A failed extraction may leave partial output.
 
 Paths use UTF-8. Support for formats, compression and links depends on the backend build and the host. Use `arc_get_capabilities` to check a requested configuration. Unsupported features return an error rather than silently choosing something else.
 

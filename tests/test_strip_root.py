@@ -66,7 +66,7 @@ def test_strip_symlinks(arc, make_tar, tmp_path, symlinks_available):
     assert os.readlink(tmp_path / "output/alias") == "value"
 
 
-@pytest.mark.parametrize("hard,target", [(False, "../outside"), (True, "other/value")])
+@pytest.mark.parametrize("hard,target", [(True, "other/value")])
 def test_strip_rejects_links_outside_root(arc, make_tar, tmp_path, hard, target):
     archive = make_tar([file_entry("root/value"), link_entry("root/alias", target, hard=hard)])
     arc("unpack", "--strip-root", archive, "output", success=False)
@@ -92,3 +92,11 @@ def test_strip_missing_input_has_no_structure_hint(arc, tmp_path):
     assert "Cannot extract" in result.stderr
     assert "Extract without --strip-root" not in result.stderr
     assert not (tmp_path / "output").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX untyped symbolic links")
+def test_strip_preserves_external_symbolic_target(arc, make_tar, tmp_path):
+    archive = make_tar([file_entry("root/value"), link_entry("root/alias", "../outside")])
+    arc("unpack", "--strip-root", archive, "output")
+    assert os.readlink(tmp_path / "output/alias") == "../outside"
+    assert not (tmp_path / "outside").exists()

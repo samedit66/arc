@@ -446,7 +446,11 @@ ArcResult arc_discard(ArcWriter **writer);
  * Detects format from content. Supports ordinary files, directories and
  * permitted symbolic/hard links. Rejects
  * unsafe paths, special files, file collisions and traversal through links.
- * Creates deferred links after data extraction and validates their targets.
+ * Creates deferred links after data extraction. Symbolic-link targets are
+ * preserved without filesystem lookup; absolute, external, dangling and cyclic
+ * targets are permitted on POSIX. Windows requires a known file/directory kind,
+ * supplied by archive metadata or inferred from selected archive records.
+ * Unknown Windows kinds return UNSUPPORTED. Hard-link targets are validated.
  * Restores supported metadata on new objects. Does not apply archive metadata
  * to existing directories or restore ownership. Creating children may change
  * existing directory timestamps through normal filesystem behavior.
@@ -606,9 +610,9 @@ Packing preserves the link object and target text without following its target, 
 
 Packing may preserve absolute or externally directed targets, but safe extraction rejects them. Such archives are inspectable, but are not guaranteed to complete a pack/unpack round trip. Relative dangling links may be preserved where their representation and target type are adequate for the host.
 
-Extraction accepts only relative targets whose resolution stays inside the destination root. Unlike entry names, a link target may contain `..`, interpreted relative to the link's parent. Do not use lexical normalization alone: a path such as `link/../file` can have different meaning when `link` is a symlink. Resolve the complete deferred-link graph and relevant existing components without following them for writes. Reject escaping targets, existing symlink/reparse components, cyclic resolution and ambiguous unsupported encodings/types. A target may be absent if its remaining lexical path stays inside the root. Convert separator representation only when the backend can preserve target semantics; never guess or silently rewrite an incompatible target.
+Extraction preserves nonempty UTF-8 symbolic-link target text without looking up the target on disk. On POSIX, absolute, external, dangling and cyclic targets are permitted. Target text is not an output entry path and is not lexically normalized. Windows retains its target-representation restrictions and needs a file/directory kind: use archive metadata first, otherwise infer it from selected archive records and implicit directories. Unknown kinds return UNSUPPORTED; existing destination objects never supply target types.
 
-Extract ordinary files/directories first, resolve hard-link groups next, and create validated symbolic links last. Deferred hard-link and symbolic-link graph traversal uses checked heap stacks, visiting states and resolved results rather than archive-depth recursion on the C stack. Symbolic frames retain continuations so subsequent components, including .., are interpreted after nested link resolution. Required parent directories are built iteratively. Allocation/size failures return results; no public depth quota is added. Never use an archive-created link as an intermediate directory. Do not apply chmod or timestamp operations by following symbolic-link targets. Link-specific metadata is best-effort only when safely available.
+Extract ordinary files/directories first, resolve hard-link groups next, and create symbolic links last. Never use an archive-created or existing link as an intermediate output directory, and never overwrite a file or link. Hard-link traversal and Windows symbolic-link type inference use checked heap stacks rather than archive-depth C recursion. Windows inference interprets subsequent components, including `..`, after nested link resolution and does not access target objects on disk. Required parent directories are built iteratively. Allocation/size failures return results; no public depth quota is added. Do not apply chmod or timestamps by following symbolic-link targets. Link-specific metadata is best-effort only when safely available.
 
 Libarchive's ZIP writer supports symbolic-link records, but its implementation notes that link handling is not standardized. Other ZIP tools may not restore them as links. ZIP symbolic-link support is therefore a tested arc/backend capability, not a promise of universal ZIP interoperability. See the [ZIP writer](https://raw.githubusercontent.com/libarchive/libarchive/master/libarchive/archive_write_set_format_zip.c).
 
@@ -683,8 +687,8 @@ creating the destination. Normalized safe names must share one directory root;
 empty archives, multiple roots and root-level non-directory entries fail.
 Root-only directories create an empty destination. Original selectors apply
 before transformation; required hard-link target paths are stripped as well.
-Relative symlink text is preserved and validated against the transformed tree;
-links leaving that tree are rejected. The omitted root's metadata is not applied.
+Symlink text is preserved without resolving the target, including targets outside
+the transformed tree; hard links leaving that tree are rejected. The omitted root's metadata is not applied.
 Compressed input can be decompressed again during the second pass. Input must
 remain unchanged for the complete operation.
 
@@ -720,7 +724,7 @@ Interactive password entry and password callbacks are outside the API.
 - Hidden filenames, per-entry passwords and interactive/callback password providers.
 - Glob/regex/exclusion selection languages or implicit extraction of unselected link dependencies.
 - Special filesystem objects, hard links to directories/symlinks, Windows junction preservation and arbitrary reparse-point preservation.
-- Unsafe external-link extraction, unresolved Windows link types and copying files as a substitute for links.
+- Writing through symbolic links, unresolved Windows link types and copying files as a substitute for links.
 - Runtime backend selection and simultaneous backend instances.
 - Automatic format substitution or external compressor execution.
 - Rollback of partially extracted trees and crash-safe/atomic archive publication.
@@ -882,7 +886,7 @@ See [Building arc](build.md) for commands and options.
 12. Temporary verification tools and fixtures remain outside the source tree. The private modules preserve the public API and CLI and library consumers link the selected complete object list.
 13. CLI exercises single-directory contents, --keep-root, multiple sources, hidden files, empty directories, compound suffixes, explicit format conflicts, automatic destination naming, existing explicit destinations and -- path parsing.
 14. Recursive packing excludes its output object by identity and rejects duplicate names across calls. A lone selected hard-link name remains an ordinary file; multiple selected aliases preserve identity in supported formats and fail explicitly in ZIP.
-15. Symbolic-link fixtures cover file/directory targets, chains, forward targets, dangling links, absolute/external targets, cycles and paths containing both links and `..`. Packing never follows targets; extraction never writes through links. Supported internal links round-trip, while unsafe extraction targets fail as documented.
+15. Symbolic-link fixtures cover file/directory targets, chains, forward targets, dangling links, absolute/external targets, cycles and paths containing both links and `..`. Packing never follows targets; extraction never writes through links. Supported links round-trip; POSIX checks also preserve external and cyclic targets.
 16. Hard-link fixtures cover forward targets, multiple aliases, conflicting metadata, missing/cyclic targets and attempts to link to existing objects. On supported hosts, verify shared identity rather than equal bytes alone.
 17. Windows checks run with and without adequate symlink permissions, exercise known/unknown target types, junction/reparse rejection, filesystem limitations and long Unicode paths. Lack of privilege is a reported failure, never an implicit copy.
 18. List reports links and unknown sizes without requiring link-creation privileges, escapes display controls, and propagates visitor failures while releasing resources. Info counters and data-byte accounting match normalized fixtures.

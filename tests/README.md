@@ -104,7 +104,9 @@ the actual OS error. An unexpected refusal on Unix remains a failure. The RAR
 extraction test explicitly checks Windows's documented symlink limitation.
 
 Whole-operation API checks cover pack cleanup, new-destination extraction,
-structured collision diagnostics and truncated paths. `api_formats.c` writes
+structured collision diagnostics and truncated paths. Symbolic-link checks cover
+exact target preservation, external/dangling/cyclic targets on POSIX, and rejection
+of writes through links in either archive order. `api_formats.c` writes
 multiple chunks through begin/write/end for every available creation format.
 `api_cleanup.c` injects finalization/removal failures to check ownership, rollback
 and preservation of both diagnostics. `test_strip_root.py` checks preflight rejection, original-path selection, link
