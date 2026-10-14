@@ -4,7 +4,9 @@ cd "$(dirname "$0")/.."
 root="$PWD"
 export CMAKE_GENERATOR=${CMAKE_GENERATOR:-Ninja}
 if [[ "$(uname -s)" == Darwin ]]; then
-    export CMAKE_PREFIX_PATH="$(brew --prefix libarchive)${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+    libarchive_prefix=$(brew --prefix libarchive)
+    export CMAKE_PREFIX_PATH="$libarchive_prefix${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+    export PKG_CONFIG_PATH="$libarchive_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 fi
 work=$(mktemp -d "${TMPDIR:-/tmp}/arc-consumers.XXXXXX")
 trap 'rm -rf "$work"' EXIT
