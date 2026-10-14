@@ -35,6 +35,11 @@ rollback deletion at native boundaries while using the production filekit code
 and real file creation/handle closing. It checks rollback, cleanup diagnostics
 and preservation of existing files.
 
+`test_release.py` uses temporary Git repositories to validate release tags:
+stable version syntax, committed `VERSION`, ancestry in `main`, annotated and
+lightweight tags, and rejection of missing or moved tags. It requires no network
+access and does not publish releases.
+
 The Python suite treats arc as a black box: it invokes the executable and checks exit
 status, output, archives and filesystem effects. The Python environment lives
 in `tests/.venv`; dependencies are declared in `pyproject.toml` and pinned in

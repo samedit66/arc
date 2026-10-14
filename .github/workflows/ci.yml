@@ -2,6 +2,8 @@ name: Archive checks
 
 on:
   push:
+    branches: ['**']
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -9,6 +11,22 @@ permissions:
   contents: read
 
 jobs:
+  release-tag:
+    name: Validate release tag
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate version and main ancestry
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: bash scripts/check-release-tag.sh "$RELEASE_TAG" "$RELEASE_COMMIT"
+
   check:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -27,6 +45,8 @@ jobs:
         shell: ${{ matrix.shell }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -75,3 +95,39 @@ jobs:
           ARC_SANITIZE: '1'
           ARC_BUILD_DIR: ${{ runner.temp }}/arc-sanitize
         run: mise run test
+
+  release:
+    name: Publish GitHub Release
+    needs: [release-tag, check]
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Publish checked tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          bash scripts/check-release-tag.sh "$RELEASE_TAG" "$RELEASE_COMMIT"
+          git fetch --force origin "+refs/heads/main:refs/remotes/origin/main" "+refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          bash scripts/check-release-tag.sh "$RELEASE_TAG" "$RELEASE_COMMIT"
+          if state=$(gh release view "$RELEASE_TAG" --json isDraft,isPrerelease --jq '[.isDraft, .isPrerelease] | @tsv'); then
+            if [[ "$state" != $'false\tfalse' ]]; then
+              echo 'An existing release is a draft or prerelease; refusing to change it.' >&2
+              exit 1
+            fi
+            echo "Release $RELEASE_TAG is already published."
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --generate-notes --title "$RELEASE_TAG"
+          fi
