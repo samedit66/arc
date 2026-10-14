@@ -96,9 +96,91 @@ jobs:
           ARC_BUILD_DIR: ${{ runner.temp }}/arc-sanitize
         run: mise run test
 
+  binaries:
+    name: Binary ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: linux-x86_64
+            shell: bash
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
+            shell: bash
+          - os: macos-15-intel
+            target: darwin-x86_64
+            shell: bash
+          - os: macos-15
+            target: darwin-arm64
+            shell: bash
+          - os: windows-latest
+            target: windows-x86_64
+            shell: msys2 {0}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Install Linux binary build tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential musl-tools linux-libc-dev cmake ninja-build pkg-config curl zip unzip autoconf automake libtool
+      - name: Install macOS binary build tools
+        if: runner.os == 'macOS'
+        run: brew install cmake ninja pkgconf autoconf automake libtool
+      - name: Install Windows binary build tools
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          path-type: inherit
+          update: true
+          install: >-
+            git zip unzip autoconf automake libtool make perl
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+      - name: Select Windows Bash
+        if: runner.os == 'Windows'
+        run: printf 'MISE_BASH_PATH=%s\n' "$(cygpath -m /usr/bin/bash)" >> "$GITHUB_ENV"
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.9.1
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-cache
+          key: static-${{ matrix.target }}-${{ hashFiles('release/vcpkg.json', 'release/triplets/**') }}
+      - name: Prepare binary cache
+        run: |
+          release_temp=$RUNNER_TEMP
+          if command -v cygpath >/dev/null 2>&1; then release_temp=$(cygpath -m "$RUNNER_TEMP"); fi
+          mkdir -p "$release_temp/vcpkg-cache"
+          printf 'ARC_RELEASE_BUILD_DIR=%s/arc-release\nVCPKG_DEFAULT_BINARY_CACHE=%s/vcpkg-cache\n' "$release_temp" "$release_temp" >> "$GITHUB_ENV"
+      - name: Build and inspect static binary
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: bash scripts/build-release.sh "$RELEASE_TARGET"
+      - name: Test packaged binary and public API
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: mise run test-release -- "$RELEASE_TARGET"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: ${{ runner.temp }}/arc-release/assets/*
+          if-no-files-found: error
+
   release:
     name: Publish GitHub Release
-    needs: [release-tag, check]
+    needs: [release-tag, check, binaries]
     if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
@@ -112,6 +194,11 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          merge-multiple: true
+          path: release-assets
       - name: Publish checked tag
         env:
           GH_TOKEN: ${{ github.token }}
@@ -122,12 +209,21 @@ jobs:
           bash scripts/check-release-tag.sh "$RELEASE_TAG" "$RELEASE_COMMIT"
           git fetch --force origin "+refs/heads/main:refs/remotes/origin/main" "+refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
           bash scripts/check-release-tag.sh "$RELEASE_TAG" "$RELEASE_COMMIT"
+          cd release-assets
+          sha256sum arc-*.tar.gz arc-*.zip > SHA256SUMS
+          marker="<!-- arc-release:$RELEASE_COMMIT -->"
           if state=$(gh release view "$RELEASE_TAG" --json isDraft,isPrerelease --jq '[.isDraft, .isPrerelease] | @tsv'); then
-            if [[ "$state" != $'false\tfalse' ]]; then
-              echo 'An existing release is a draft or prerelease; refusing to change it.' >&2
+            if [[ "$state" == $'false\tfalse' ]]; then
+              echo "Release $RELEASE_TAG is already published."
+              exit 0
+            fi
+            body=$(gh release view "$RELEASE_TAG" --json body --jq .body)
+            if [[ "$state" != $'true\tfalse' || "$body" != *"$marker"* ]]; then
+              echo 'Existing draft or prerelease was not created by this workflow.' >&2
               exit 1
             fi
-            echo "Release $RELEASE_TAG is already published."
+            gh release upload "$RELEASE_TAG" arc-*.tar.gz arc-*.zip SHA256SUMS --clobber
           else
-            gh release create "$RELEASE_TAG" --verify-tag --generate-notes --title "$RELEASE_TAG"
+            gh release create "$RELEASE_TAG" arc-*.tar.gz arc-*.zip SHA256SUMS --draft --verify-tag --generate-notes --notes "$marker" --title "$RELEASE_TAG"
           fi
+          gh release edit "$RELEASE_TAG" --draft=false

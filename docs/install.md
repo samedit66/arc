@@ -1,50 +1,24 @@
 # Installing and removing arc
 
-The installers select the latest stable GitHub release and build arc locally.
-They fail if no stable release exists; there is no automatic fallback to `main`. They run `mise trust` on the downloaded
-repository and replace an existing ordinary `arc` binary in the destination.
-They refuse to replace a symbolic link or a non-regular file.
+The installers select the latest stable GitHub Release and download the binary
+for your operating system and architecture. They verify its SHA256 against
+`SHA256SUMS`, its package version and `arc --version` before replacing an
+existing binary. There is no automatic fallback to `main` or source builds.
+Symlinks, reparse points and non-regular destination files are rejected.
 
 ## Prerequisites
 
-Install Git, curl, mise, Bash, a C11 compiler, `ar`, pkg-config and libarchive
-development files before running the installer. The installer does not install
-system dependencies. Python and uv are not needed for CLI installation.
+Binary installation requires no compiler, mise, Git, libarchive or MSYS2.
 
-### macOS
+- macOS 13+: Intel x86_64 or Apple Silicon arm64; `sh`, curl, tar and shasum.
+- Linux: x86_64 or arm64; `sh`, curl, tar and sha256sum (or shasum).
+- Windows x86_64: Windows PowerShell 5.1+ or PowerShell 7. The binary uses
+  Windows system DLLs; third-party library DLLs and MSYS2 are not needed.
 
-With Homebrew available, install Apple command-line tools if needed, then:
-
-```sh
-xcode-select --install
-brew install git libarchive pkgconf mise
-```
-
-The build selects Homebrew's libarchive automatically.
-
-### Linux: Debian / Ubuntu
-
-```sh
-sudo apt update
-sudo apt install git curl bash build-essential pkg-config libarchive-dev
-```
-
-Install mise separately and make it available in `PATH`. Other distributions
-need the equivalent compiler, pkg-config and libarchive development packages.
-
-### Windows: MSYS2 UCRT64
-
-Install MSYS2 and open its UCRT64 terminal. Update packages first; reopen the
-terminal if requested, then repeat the update before installing dependencies:
-
-```sh
-pacman -Syu
-pacman -S --needed git mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-libarchive mingw-w64-ucrt-x86_64-pkgconf
-```
-
-Install mise separately and make it available in `PATH`. Use the UCRT64
-toolchain and libraries together. The PowerShell installer requires Windows
-PowerShell 5.1 or newer and defaults to MSYS2 at `C:\msys64`.
+Linux binaries use musl and are fully static. macOS binaries link third-party
+libraries statically while using macOS system libraries. SHA256 detects a
+corrupt download; the checksum manifest is obtained from the same GitHub
+Release over HTTPS, rather than from an independent signing authority.
 
 ## Installation
 
@@ -60,14 +34,15 @@ The default destination is `~/.local/bin`. To choose another absolute directory:
 curl -fsSL https://raw.githubusercontent.com/samedit66/arc/main/scripts/install.sh | sh -s -- --install-dir /absolute/path
 ```
 
-Add the destination directory to your shell's `PATH` if needed. For the default:
+Add the destination to your shell's `PATH`, for example:
 
 ```sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Add that line to your shell's startup file to retain it in future sessions.
-The same shell installer works inside MSYS2 UCRT64.
+Add that line to your shell startup file to retain it in future sessions.
+The shell installer also works inside MSYS2 UCRT64; ZIP extraction there
+requires unzip. Windows users can instead use PowerShell without MSYS2.
 
 ### Windows PowerShell
 
@@ -75,65 +50,91 @@ The same shell installer works inside MSYS2 UCRT64.
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/samedit66/arc/main/scripts/install.ps1)))
 ```
 
-The default destination is `%USERPROFILE%\.local\bin`. For custom locations:
+The default destination is `%USERPROFILE%\.local\bin`. For a custom location:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/samedit66/arc/main/scripts/install.ps1))) -InstallDir 'C:\Tools\arc' -Msys2Root 'D:\msys64'
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/samedit66/arc/main/scripts/install.ps1))) -InstallDir 'C:\Tools\arc'
 ```
 
-Both paths must be absolute. Add the installation directory and MSYS2's
-`ucrt64\bin` to your user `PATH`; the latter supplies libarchive's runtime DLLs.
-For the default paths in the current PowerShell session:
+The installation directory must be absolute. Add only that directory to your
+user `PATH`; no third-party runtime directory is required for release binaries.
+For the default location in the current PowerShell session:
 
 ```powershell
-$env:PATH = "$env:USERPROFILE\.local\bin;C:\msys64\ucrt64\bin;$env:PATH"
+$env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
 ```
 
-Use Windows environment-variable settings to retain these entries.
-
-## Select a version
-
-To install a particular release or explicitly choose development builds:
+## Select a version or build from source
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/samedit66/arc/main/scripts/install.sh | sh -s -- --version v0.1.0
+curl -fsSL https://raw.githubusercontent.com/samedit66/arc/main/scripts/install.sh | sh -s -- --version v0.1.1
+curl -fsSL https://raw.githubusercontent.com/samedit66/arc/main/scripts/install.sh | sh -s -- --version v0.1.0 --from-source
 curl -fsSL https://raw.githubusercontent.com/samedit66/arc/main/scripts/install.sh | sh -s -- --version main
 ```
 
-In PowerShell, append `-Version v0.1.0` or `-Version main` to the installation
-command. The wrapper downloads the shell installer from that selected ref.
-Release tags must be `vMAJOR.MINOR.PATCH` and agree with the source `VERSION`.
+In PowerShell, use `-Version v0.1.1`, `-Version v0.1.0 -FromSource` or
+`-Version main`. `main` always builds from source. Version tags must be
+`vMAJOR.MINOR.PATCH` without leading zeroes and match `VERSION` in the package
+or downloaded source. The installer script is fetched from `main`, while the
+selected tag controls the binary or source being installed.
 
-## Verify or update
+Binary assets are available starting with v0.1.1. Older releases, including
+v0.1.0, require the explicit source option. An unavailable binary or checksum
+causes installation to fail, preserving the previous executable.
+
+Source builds require Git, Bash, mise, a C11 compiler, ar, pkg-config and
+libarchive development files. They run `mise trust` on the downloaded source.
+Python and uv are not required. For macOS prerequisites, use Homebrew:
+
+```sh
+xcode-select --install
+brew install git libarchive pkgconf mise cmake
+```
+
+On Debian / Ubuntu:
+
+```sh
+sudo apt update
+sudo apt install git curl bash build-essential pkg-config libarchive-dev
+```
+
+Install mise separately. On Windows, install MSYS2, update its packages, and
+install the UCRT64 toolchain:
+
+```sh
+pacman -Syu
+pacman -S --needed git mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-libarchive mingw-w64-ucrt-x86_64-pkgconf
+```
+
+Install mise separately. PowerShell source installation defaults to MSYS2
+at `C:\msys64`; use `-Msys2Root 'D:\msys64'` to choose another root.
+Source-built Windows executables need MSYS2's `ucrt64\bin` on `PATH`.
+
+## Verify, update or remove
 
 ```sh
 arc --version
 arc --help
 ```
 
-Release installations report `arc <version>`; explicit `main` installations
-report `arc <version>+main.<commit>`. Run the installer again with the same
-destination to update to the latest stable release, or repeat the version
-selection to update development builds. A failed build or staging step
-preserves the existing binary; temporary download/build files are cleaned up.
+Release installations report `arc <version>`; `main` reports
+`arc <version>+main.<commit>`. Run the installer again to update. Temporary
+files are cleaned up and the executable is staged in the installation
+filesystem before replacement. Bundled licenses are installed alongside it
+as `arc-THIRD_PARTY_NOTICES.txt`.
 
-## Removal
-
-For the default macOS / Linux installation:
+To remove the default macOS / Linux installation:
 
 ```sh
-rm -- "$HOME/.local/bin/arc"
+rm -- "$HOME/.local/bin/arc" "$HOME/.local/bin/arc-THIRD_PARTY_NOTICES.txt"
 ```
 
-For the default Windows installation, in PowerShell:
+In PowerShell:
 
 ```powershell
-Remove-Item -LiteralPath "$env:USERPROFILE\.local\bin\arc.exe"
+Remove-Item -LiteralPath "$env:USERPROFILE\.local\bin\arc.exe", "$env:USERPROFILE\.local\bin\arc-THIRD_PARTY_NOTICES.txt"
 ```
 
-For a custom destination, remove its `arc` or `arc.exe` file. The installer
-prints a removal command for the actual destination. Remove PATH entries only
-if you added them exclusively for arc. Dependencies such as mise and libarchive
-remain installed.
-
-For source builds and library integration, see [Building arc](build.md).
+For a custom destination, remove those two files there. Remove PATH entries
+only if you added them exclusively for arc. Source build dependencies remain
+installed. See [Building arc](build.md) for library embedding and development.

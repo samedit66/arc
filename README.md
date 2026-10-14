@@ -29,8 +29,8 @@ Because “unpack” shouldn’t require remembering whether it’s `tar -xzf`, 
 
 ## Installation
 
-Installs the latest stable release. Before the first release, select `main` explicitly
-with `--version main` (shell) or `-Version main` (PowerShell).
+Installs the latest stable release binary. For a development source build,
+select `main` explicitly with `--version main` (shell) or `-Version main` (PowerShell).
 
 macOS / Linux:
 
@@ -38,7 +38,7 @@ macOS / Linux:
 curl -fsSL https://raw.githubusercontent.com/samedit66/arc/main/scripts/install.sh | sh
 ```
 
-Windows (PowerShell, with MSYS2 UCRT64 installed):
+Windows x86_64 (PowerShell; no MSYS2 required for release binaries):
 
 ```powershell
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/samedit66/arc/main/scripts/install.ps1)))

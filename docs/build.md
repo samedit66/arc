@@ -53,12 +53,12 @@ Prerelease and build-metadata tags are not supported by this release workflow.
 Commit the intended version to the root `VERSION` file and push the commit to
 `main` before pushing its tag. The tag must match `VERSION` in the tagged
 commit, and that commit must belong to `main` history. For example, once
-`VERSION` contains `0.1.0` and the release commit is on `main`:
+`VERSION` contains `0.1.1` and the release commit is on `main`:
 
 ```sh
 git push origin main
-git tag -a v0.1.0 -m "Release v0.1.0"
-git push origin v0.1.0
+git tag -a v0.1.1 -m "Release v0.1.1"
+git push origin v0.1.1
 ```
 
 The workflow validates the tag and runs the complete Ubuntu, macOS and Windows
@@ -68,16 +68,18 @@ Before publishing, it refreshes the remote tag and `main` and validates again
 to reject a tag moved to a different commit while checks were running.
 
 The publication job alone receives `contents: write`. It creates a stable
-GitHub Release with generated release notes and the existing tag; GitHub
-provides source archives automatically. No prebuilt binaries are attached.
-The installers then resolve the latest stable release and build it locally.
+GitHub Release with generated release notes, five tested binary packages and
+`SHA256SUMS`. Assets are uploaded into a draft before publication; GitHub also
+provides source archives. Installers download and verify a release binary by
+default. See [release build details](../release/README.md).
 Branch pushes, pull requests and manual workflow runs perform checks without
 publishing a release.
 
 If checks fail, the tag remains but no release is published. Rerun the failed
 workflow after a transient infrastructure failure. Code fixes require a new
 commit and tag. Rerunning a successful release leaves the existing stable
-release unchanged; an existing draft or prerelease causes publication to fail.
+release unchanged. A draft created by this workflow for the same commit can
+resume after an interrupted upload; unrelated drafts and prereleases are rejected.
 Keep published versions immutable and release corrections under a new version.
 
 The tag must point to a commit containing this workflow and its validation
@@ -85,7 +87,7 @@ script. A tag on an older commit cannot use release automation added later.
 
 ## Windows
 
-Use the [MSYS2 UCRT64 setup](install.md#windows-msys2-ucrt64), then run the mise
+Use the [source build prerequisites](install.md#select-a-version-or-build-from-source), then run the mise
 build commands above from the repository root in the UCRT64 terminal.
 To launch from PowerShell, include MSYS2's `ucrt64\bin` in `PATH` for runtime DLLs.
 MSVC is not currently verified.

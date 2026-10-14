@@ -32,6 +32,12 @@ dir = "{{config_root}}"
 description = "Alias for the black-box test suite"
 depends = ["test"]
 
+[tasks.test-release]
+description = "Test the already-built static release binary and public API"
+shell = "bash -euo pipefail -c"
+run = "bash scripts/test-release.sh"
+dir = "{{config_root}}"
+
 [tasks.check]
 description = "Build and test arc, then check C formatting"
 depends = ["test"]

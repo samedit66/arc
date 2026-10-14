@@ -21,8 +21,9 @@ It requires no network or system package installation and checks piped input,
 updates, destination validation, temporary-file cleanup and preservation of an
 existing binary after download, dependency, build, copy or publication failures.
 `test_install_windows.py` uses real PowerShell and MSYS2 Bash on Windows,
-replacing the download with a local shell script. It checks path quoting,
-UCRT64 selection, failure propagation, environment restoration and cleanup.
+replacing downloads with local fixtures. It tests source builds through MSYS2
+and native binary installation without MSYS2, checksum failures, package
+validation, preservation of old executables, environment restoration and cleanup.
 
 Before pytest, `scripts/check-api.sh` compiles and runs `tests/api.c` against
 the freshly built static library. It checks public writer/reader states, chunk
@@ -39,6 +40,12 @@ and preservation of existing files.
 stable version syntax, committed `VERSION`, ancestry in `main`, annotated and
 lightweight tags, and rejection of missing or moved tags. It requires no network
 access and does not publish releases.
+
+`ARC_RELEASE_BUILD_DIR=/tmp/arc-release mise run test-release -- TARGET` runs
+CMake's API tests and this complete Python suite against a previously built
+release binary. It does not rebuild against system dependencies; use
+`scripts/build-release.sh TARGET` first. CI runs this for each of the five
+release targets, then packages only successfully tested builds.
 
 The Python suite treats arc as a black box: it invokes the executable and checks exit
 status, output, archives and filesystem effects. The Python environment lives
