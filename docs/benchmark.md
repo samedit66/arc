@@ -1,64 +1,47 @@
-# Archive CLI benchmark
+# Archive benchmarks
 
-## Recorded run
+Local measurements on 15 October 2026, macOS 26.6.2 ARM64. Arc 0.2.0,
+native CMake Release with Homebrew libarchive 3.8.9 and system zlib 1.2.12;
+[ouch 0.8.3](https://github.com/ouch-org/ouch), macOS bsdtar 3.5.3
+(libarchive 3.7.4), Info-ZIP zip 3.0 / unzip 6.00. Python 3.13.15 and
+Hyperfine 2.0.0 drive the runs. These are warm-cache CLI measurements from
+one machine, including startup and I/O but no explicit disk sync.
 
-Measured on 15 October 2026, macOS 26.6.2 ARM64, Python 3.13.15.
-Arc 0.2.0 was built with the native CMake Release preset and Homebrew
-libarchive 3.8.9 (repository revision `9fa1f180e0f0fbd504045e5e3661a8049d082c95`).
-The competitors were Apple's `/usr/bin/tar` (bsdtar 3.5.3, libarchive 3.7.4),
-Info-ZIP zip 3.0 / unzip 6.00, and the official
-[ouch 0.8.3 macOS ARM64 release](https://github.com/ouch-org/ouch/releases/tag/0.8.3).
-The ouch download SHA-256 matched the release API digest:
-`969c1bd9105b5033cc9cac0a37c011d23482948d681b43f97c6f79311f3263d0`.
+## Findings and recorded versions
 
-The synthetic fixtures below were measured together in one run. A separate
-run on upstream ouch's Rust workloads is reported later in this document.
-Earlier two-tool results were exploratory and are superseded by these tables.
-These are observations from one machine, not portable performance guarantees.
-These snapshots precede the compact extraction-metadata change. See the
-[performance experiments](performance-experiment.md) for the follow-up:
-ZIP backend isolation, timezone effects, zlib-ng and reduced extraction memory.
+Arc extracted faster than ouch in eight of nine synthetic cases and on the
+shared Rust TAR/TAR.GZ inputs. Ouch packed fastest throughout the baseline
+comparisons and won small-file ZIP extraction. Compression ratios and
+metadata policies differ; speed alone does not establish feature superiority.
 
-## Reproduce
+Later changes reduced extraction memory by 83% and reduced integer-mtime
+small-file TAR size by 29%, with a 9% packing improvement in that run.
+Rust TAR packing did not improve measurably. ZIP experiments identified a
+large timezone-conversion cost and a compression speed/size trade-off.
 
-```sh
-mise run bench -- --ouch /absolute/path/to/ouch --output build/bench/with-ouch.csv
-```
+| Snapshot | Arc baseline → measured change | Status |
+|---|---|---|
+| Synthetic and upstream Rust comparison | `9fa1f18` | Before both optimizations |
+| ZIP and extraction memory | `b6221fb` → compact extraction metadata in `28545fb` | Memory change implemented; UTC and zlib-ng are experiments |
+| TAR packing | `28545fb` → timestamp cleanup and query reuse in `9022930` | Implemented |
 
-Omit `--ouch` to compare only Arc and system tools. The script does not
-install competitors. Override `--seed`, `--size-mib`, `--small-files` or
-`--runs` for another workload. All fixtures, archives and extraction directories
-are temporary and removed automatically, including on command failure.
-Only small reports are retained; generated payloads and tool binaries are not
-committed. [Raw samples from this run](benchmark-results.csv) are included.
-The generated JSON in `build/bench` additionally contains full file hashes,
-executable paths and version output.
+The original tables describe their recorded builds, not the current release.
+Do not combine timings from different runs into one ranking.
 
-Fixture version 1, seed 1729:
+## Synthetic comparison
 
-- **small:** 2,000 text files of 2,048 bytes each in 20 directories (3.90625 MiB).
-- **text:** one 16 MiB file containing repeated UTF-8 records; deliberately very compressible.
-- **binary:** one 16 MiB file of seeded pseudorandom bytes; poorly compressible.
+Fixture version 1, seed 1729: 2,000 × 2,048-byte files in 20 groups, one
+16 MiB repeated UTF-8 text file, and one 16 MiB seeded pseudorandom file.
+One warm-up and five samples per case, rotating tool order; medians below.
+Each tool extracts its own archive. All warm-up and measured extractions
+passed filename/SHA-256 checks outside the timer.
 
-Each dataset/format/tool has one warm-up and five measured runs. The starting
-tool rotates between runs. Wall-clock timing includes process startup and
-command I/O. Source generation, directory cleanup and SHA-256 validation
-of extracted file names and bytes are outside the timer. The script verifies
-every warm-up and measured extraction; all passed in this run.
+![Synthetic packing times](assets/benchmark/synthetic-pack.svg)
 
-## Synthetic results
+![Synthetic extraction times](assets/benchmark/synthetic-unpack.svg)
 
-Blue is Arc, orange is ouch, grey is the system tool. Shorter bars mean less
-time. Each panel has its own linear scale starting at zero, so compare tools
-within a panel; use the printed values to compare different workloads.
-
-![Synthetic fixture packing times](assets/benchmark/synthetic-pack.svg)
-
-![Synthetic fixture extraction times](assets/benchmark/synthetic-unpack.svg)
-
-Times are medians in milliseconds; archive size is the median byte count.
-`zip / unzip` means zip packs and unzip extracts. Other tools perform both
-operations. Each tool extracts the archive it created.
+Blue: Arc; orange: ouch; grey: system tool. Each panel has an independent
+zero-based linear scale. `zip / unzip` names packing and extraction tools.
 
 <details>
 <summary>Exact synthetic timings and archive sizes</summary>
@@ -95,175 +78,220 @@ operations. Each tool extracts the archive it created.
 
 </details>
 
+Ouch's repeated-text TAR.GZ was 120,116 bytes versus Arc's 57,904 bytes:
+the compression speed gap includes a space trade-off. Pseudorandom data
+barely compresses. Arc's small-file TAR packing was 6–7 times faster than
+this macOS bsdtar; this does not establish the same result for GNU tar.
+Raw samples: [synthetic CSV](benchmark-results.csv).
+
+## Rust workloads from ouch
+
+Our adaptation uses pinned Rust 1.65.0 at
+`897e37553bba8b42751c67658967889d11ecd120`, omits `.git` and retains the
+root name with `--keep-root`. Full Rust: 36,806 files / 90,129,348 content
+bytes for TAR. Compiler subtree: 2,163 files / 23,015,556 bytes for TAR.GZ
+and ZIP. These compressed workloads differ from the later full-tree TAR test.
+
+Four warm-ups and ten samples per command; Hyperfine means ± sample standard
+deviation, fixed upstream tool grouping. All readers use one ouch-created
+input per format. Outputs are cleaned between samples; an additional untimed
+run after each group checks filenames and SHA-256 bytes (all 18 passed).
+Those checks do not validate timestamps, permissions or links.
+
+![Rust packing and extraction times](assets/benchmark/rust-time.svg)
+
+![Rust archive sizes](assets/benchmark/rust-size.svg)
+
+Error bars are sample deviations, not confidence intervals. Independent
+zero-based scales; packed sizes differ from the shared extraction input.
+
+<details>
+<summary>Exact Rust timings and archive sizes</summary>
+
+| Format | Pack / unpack tool |Pack ms | Unpack ms | Archive bytes |
+|---|---|---|---:|---:|---:|
+| small | tar | arc | 87.34 | 133.06 | 7,199,744 |
+| small | tar | tar | 644.20 | 582.21 | 9,270,784 |
+| small | tar | ouch | 78.47 | 189.76 | 5,131,264 |
+| small | tar.gz | arc | 102.48 | 126.36 | 96,708 |
+| small | tar.gz | tar | 657.13 | 558.84 | 112,404 |
+| small | tar.gz | ouch | 77.17 | 187.03 | 68,407 |
+| small | zip | arc | 256.85 | 305.19 | 523,911 |
+| small | zip | zip / unzip | 272.39 | 236.82 | 483,831 |
+| small | zip | ouch | 93.39 | 177.66 | 468,702 |
+| text | tar | arc | 11.64 | 8.57 | 16,779,776 |
+| text | tar | tar | 12.01 | 12.25 | 16,783,360 |
+| text | tar | ouch | 9.02 | 12.29 | 16,778,752 |
+| text | tar.gz | arc | 31.88 | 7.64 | 57,904 |
+| text | tar.gz | tar | 32.74 | 8.07 | 58,161 |
+| text | tar.gz | ouch | 5.96 | 12.56 | 120,116 |
+| text | zip | arc | 31.94 | 7.29 | 57,895 |
+| text | zip | zip / unzip | 45.69 | 38.85 | 57,849 |
+| text | zip | ouch | 9.59 | 11.79 | 123,319 |
+| binary | tar | arc | 10.24 | 6.62 | 16,779,776 |
+| binary | tar | tar | 11.15 | 11.58 | 16,783,360 |
+| binary | tar | ouch | 7.67 | 10.82 | 16,778,752 |
+| binary | tar.gz | arc | 235.13 | 7.84 | 16,782,619 |
+| binary | tar.gz | tar | 237.04 | 10.04 | 16,782,871 |
+| binary | tar.gz | ouch | 32.16 | 13.35 | 16,783,314 |
+| binary | zip | arc | 236.68 | 8.38 | 16,782,526 |
+| binary | zip | zip / unzip | 246.68 | 51.20 | 16,779,946 |
+| binary | zip | ouch | 181.30 | 12.86 | 16,782,499 |
+
+</details>
+
 ## What this run shows
 
-Ouch packs fastest in all nine cases here. The difference is especially large
-for TAR.GZ, but this is not evidence that its compression algorithm is better
-at an equal compression ratio: the large text TAR.GZ is 120,116 bytes versus
-Arc's 57,904 bytes, and its ZIP is 123,319 versus 57,895 bytes. Different
-compression defaults/backends can trade space for speed.
+</details>
 
-Arc extracts faster than ouch in eight of nine cases, including TAR and TAR.GZ
-with many small files. Ouch wins the small-file ZIP extraction case
-(177.66 ms versus Arc's 305.19 ms); unzip also beats Arc there (236.82 ms).
-For the two large-file ZIP cases, Arc extracts substantially faster than unzip.
+Arc's extraction means were about 25% below ouch for TAR and 32% for TAR.GZ.
+Its 4% TAR gap against bsdtar is within observed variation. Ouch won ZIP
+extraction and all packing cases. Arc's compressed archives were slightly
+larger (TAR.GZ 0.25%, ZIP 1.4%). Original TAR peak RSS averaged 85.6 MiB
+for Arc, 8.6 MiB for ouch and 4.1 MiB for tar; the later 20,000-file memory
+experiment below uses a different corpus and statistic. Hyperfine flagged
+tar's first TAR.GZ extraction sample (260 ms); it remains in the results.
+Raw samples: [Rust timing and memory CSV](benchmark-ouch-results.csv).
 
-On small-file TAR/TAR.GZ, Arc is about 6–7 times faster at packing than this
-macOS bsdtar, while ouch is faster still. This does not establish the same
-relationship with GNU tar on Linux. Even uncompressed TAR sizes differ
-substantially, demonstrating different archive metadata/layout overhead.
+## Optimization experiments
 
-Pseudorandom data barely compresses. Compression time there mainly buys an
-archive approximately the size of its input. Repeated text is an extreme
-synthetic case; it does not stand in for a diverse source repository.
+| Change or experiment | Observed result | Interpretation |
+|---|---|---|
+| Compact extraction metadata | 20,000-file TAR peak RSS: 41.17 → 7.17 MiB | Implemented; directory and hard-link metadata preserved |
+| TAR timestamp cleanup + query reuse | Integer-mtime TAR: 76.02 → 69.01 ms; 7,201,280 → 5,131,776 bytes | Implemented; unsupported time fields omitted, full PAX retained |
+| Explicit `TZ=UTC0` for every participant | Small ZIP extraction: Arc 131.92 ms, ouch 176.82 ms | Environment experiment; native Arc 299.39 ms vs ouch 176.73 ms |
+| Isolated zlib-ng 2.3.3 | Repeated-text ZIP: 31.78 → 9.39 ms; 57,895 → 107,103 bytes | Prototype; faster compression produces a larger archive |
 
-## Rust workloads from ouch's benchmark
+### ZIP and extraction memory
 
-This second local run uses the upstream workloads and command structure with
-Arc added. It is an adaptation, not a run of the unchanged upstream shell
-script: Hyperfine 2.0.0 is used, the run count is fixed at ten, and correctness
-checks and archive sizes are added. Native macOS bsdtar is used instead of the
-GNU tar in upstream's Nix environment. Historical upstream scores are not a
-baseline for these numbers.
+![ZIP and extraction-memory experiments](assets/benchmark/zip-experiment.svg)
 
-```sh
-mise run bench-ouch -- --ouch /path/to/ouch --hyperfine /path/to/hyperfine
-```
+ZIP uses the same generated fixtures, one warm-up and seven samples,
+rotating tool order. All warm-up and measured outputs passed name/content
+checks. Both timezone settings extract the same ouch ZIP; these checks do
+not establish equivalent restored timestamps. Memory uses a separate
+20,000-file TAR, one warm-up and three Hyperfine peak-RSS samples, medians;
+final extracted content was checked. Ouch peak RSS was 3.73 MiB.
 
-The runner downloads Rust 1.65.0 into temporary storage, checks commit
-`897e37553bba8b42751c67658967889d11ecd120`, omits `.git` from the benchmark
-copy, and copies `rust/compiler` as a separate workload, just as upstream does.
-An optional `--source /path/to/rust` reuses that exact checkout without changing
-it. Payloads and archives are removed on exit; tool binaries are supplied by
-the caller. [Raw timing and peak-memory samples](benchmark-ouch-results.csv)
-are retained with this report.
+A temporary probe attributed about 170 ms of a 300 ms small ZIP extraction
+to libarchive header processing; entry cloning took about 1 ms. Libarchive's
+[ZIP reader](https://github.com/libarchive/libarchive/blob/v3.8.9/libarchive/archive_read_support_format_zip.c)
+uses `mktime` for DOS timestamp conversion. Explicit UTC reduced diagnostic
+header time from about 173 ms to 5 ms. Arc does not change the caller's `TZ`:
+ZIP DOS timestamps have no timezone, so changing it can alter restored times.
 
-- **rust:** 36,806 files, 90,129,348 content bytes (85.95 MiB). Used for TAR.
-- **compiler:** 2,163 files, 23,015,556 content bytes (21.95 MiB). Used for TAR.GZ and ZIP.
+The backend-only probe uses libarchive extraction but lacks Arc's complete
+ownership, conflict, error and metadata contracts. It is diagnostic only.
+The isolated compression build was checked to load zlib-ng 2.3.3 in zlib
+compatibility mode (Clang 22.1.8, CMake Release). No production dependency
+or compression default changed. Raising its ZIP level to 9 recovered the
+ordinary archive size: 19.44 ms / 57,564 bytes versus ordinary Arc
+31.71 ms / 57,895 and ouch 10.01 ms / 123,319. The default fast-build gap
+against ouch (9.39 vs 9.63 ms) is not a robust ranking; random binary still
+packed slower (203.14 vs 183.11 ms).
 
-Each command has four warm-ups and ten timed samples. Upstream's verbose
-commands are preserved and Hyperfine redirects output to the null device.
-Arc packs with `--keep-root` to match ouch, tar and zip. Each extraction format
-uses **one archive created by ouch for all three readers**. Output directories
-are cleaned before every sample; tar's destination is created outside timing.
-Command order follows the upstream grouping (ouch, Arc, system tool), rather
-than the rotating synthetic harness. After each group, an additional untimed
-run validates each participant's extracted file names and SHA-256 content.
-All 18 participant/operation checks passed. These checks do not validate
-permissions, timestamps or link semantics.
+<details>
+<summary>Native and UTC timings</summary>
 
-### Visual comparison
+| Environment | Dataset | Operation | Arc | Arc + zlib-ng | ouch | Backend-only |
+|---|---|---|---:|---:|---:|---:|
+| default | small | pack | 253.28 | 250.76 | 91.58 | 234.76 |
+| default | small | unpack | 299.39 | 302.80 | 176.73 | 311.58 |
+| default | text | pack | 31.78 | 9.39 | 9.63 | 31.78 |
+| default | text | unpack | 10.03 | 9.51 | 13.80 | 10.37 |
+| default | binary | pack | 232.46 | 203.14 | 183.11 | 231.99 |
+| default | binary | unpack | 8.06 | 9.42 | 12.76 | 7.46 |
+| utc | small | pack | 95.85 | 92.01 | 92.91 | 77.35 |
+| utc | small | unpack | 131.92 | 132.01 | 176.82 | 147.50 |
+| utc | text | pack | 31.73 | 9.25 | 9.67 | 31.60 |
+| utc | text | unpack | 6.86 | 8.11 | 12.01 | 6.66 |
+| utc | binary | pack | 233.11 | 202.70 | 181.39 | 232.54 |
+| utc | binary | unpack | 7.77 | 8.96 | 13.06 | 7.18 |
 
-![Rust workload packing and extraction times](assets/benchmark/rust-time.svg)
+</details>
 
-Error bars show one standard deviation of observed samples, not confidence
-intervals. Each panel starts at zero and uses its own seconds scale.
-TAR uses the full Rust tree; TAR.GZ and ZIP use only the compiler subtree.
+Raw data: [ZIP samples](benchmark-zip-results.csv),
+[ZIP environment metadata](benchmark-zip-environment.json),
+[compression levels](benchmark-compression-levels.csv),
+[peak memory](benchmark-memory-results.csv).
 
-![Rust workload archive sizes](assets/benchmark/rust-size.svg)
+### TAR packing
 
-### Recorded numbers
+![TAR packing time and size](assets/benchmark/tar-experiment.svg)
 
-Times are means ± sample standard deviation in milliseconds. Sizes are from
-an additional packing run; extraction timing uses ouch's common input size,
-not each tool's packed size. `zip / unzip` names both commands explicitly.
+Timestamp cleanup omits access/change/creation times, outside Arc's supported
+restoration policy. For ordinary integer-mtime entries it removes unnecessary
+PAX records. Fractional mtime and long-path/link metadata still use full PAX.
+Traversal now passes its fresh filesystem information to the writer instead
+of making a second query; output exclusion and link checks remain intact.
 
-| Format | Pack / unpack tool | Pack ms ± σ | Unpack ms ± σ | Packed archive bytes |
-|---|---|---:|---:|---:|
-| tar | arc | 1,789.5 ± 55.1 | 3,188.7 ± 279.2 | 160,708,096 |
-| tar | ouch | 1,643.3 ± 214.3 | 4,249.0 ± 42.4 | 120,519,168 |
-| tar | tar | 14,522.4 ± 560.5 | 3,314.5 ± 103.0 | 201,178,624 |
-| tar.gz | arc | 458.7 ± 2.2 | 202.7 ± 5.8 | 5,469,319 |
-| tar.gz | ouch | 78.6 ± 2.3 | 296.3 ± 4.9 | 5,455,705 |
-| tar.gz | tar | 1,182.2 ± 12.9 | 231.6 ± 11.6 | 5,552,206 |
-| zip | arc | 590.0 ± 2.2 | 436.0 ± 23.6 | 6,406,411 |
-| zip | ouch | 261.2 ± 1.0 | 278.5 ± 14.2 | 6,315,881 |
-| zip | zip / unzip | 640.2 ± 44.5 | 617.9 ± 9.0 | 6,359,222 |
+Integer-mtime small TAR improved by 9.2% in time and 28.7% in size; TAR.GZ
+by 11.0% and 50.7%. Rust TAR showed no improvement (1,751.90 → 1,771.98 ms),
+with unchanged size. Rust TAR.GZ shrank 2.7%; its 1.5% timing gap is too small
+for a robust conclusion. Ouch remained faster in all cases and omitted
+fractional mtime; smaller fractional TAR output preserves less time precision.
 
-Ouch packs fastest in all three formats on these workloads. Arc is close to
-ouch for TAR packing, but slower for TAR.GZ and ZIP. Arc still packs faster
-than these system commands in all three cases. For extraction of the shared
-TAR and TAR.GZ inputs, Arc's means are lower than ouch's by about 25% and 32%.
-Its TAR extraction mean is only about 4% below tar's, within the observed
-variation; that small gap is not a strong ranking. For ZIP, ouch extracts
-faster than Arc (279 ms versus 436 ms), and Arc is faster than unzip (618 ms).
+One warm-up and five samples per case, rotating order, native timezone.
+Integer/fractional fixtures have the same 2,000-file payload and 2,021 entries;
+fractional mtime is 1700000000.123456700. Integer PAX entries fell from 2,021
+to zero; fractional entries still require PAX. Fresh full Rust checkout:
+39,522 entries, all fractional mtime, root `arc-tar-rust-1.65.0`. Checkout
+times and root names differ from the original Rust comparison.
 
-On this real-source workload, ouch's compressed archives are also slightly
-smaller: TAR.GZ differs from Arc by about 0.25%, ZIP by about 1.4%. The large
-speed gap here comes without the synthetic repeated-text size penalty.
-Uncompressed TAR has much larger layout/metadata differences: Arc's output is
-153.26 MiB, ouch's 114.94 MiB and tar's 191.86 MiB, despite matching extracted
-file contents. The benchmark does not attribute those extra bytes to a specific
-metadata feature. On TAR extraction, Hyperfine reports average peak RSS
-of about 85.6 MiB for Arc, 8.6 MiB for ouch and 4.1 MiB for tar. Arc's faster
-mean against ouch in this scenario comes with a higher measured memory peak.
-The full timing and memory samples are in the CSV; the scripts do not flush
-caches or sync writes to disk.
+<details>
+<summary>TAR medians (ms) and archive sizes (bytes)</summary>
 
-Hyperfine flagged the first TAR.GZ extraction sample for tar as slower than
-the others (260 ms). It is retained in the mean and error bar. Other local
-loads and cache state can affect these results; four warm-ups do not eliminate
-all variation.
+| Dataset | Format |Before ms | Metadata ms | After ms | ouch ms | Before bytes | After bytes | ouch bytes |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| integer | tar | 76.02 | 72.32 | 69.01 | 61.06 | 7,201,280 | 5,131,776 | 5,131,776 |
+| integer | tar.gz | 90.08 | 86.29 | 80.22 | 58.13 | 96,403 | 47,525 | 68,578 |
+| fractional | tar | 72.35 | 72.98 | 68.37 | 59.41 | 7,201,280 | 7,201,280 | 5,131,776 |
+| fractional | tar.gz | 89.25 | 86.12 | 82.27 | 58.50 | 108,391 | 81,424 | 68,433 |
+| source | tar | 1751.90 | 1828.12 | 1771.98 | 1386.62 | 160,708,096 | 160,708,096 | 121,851,392 |
+| source | tar.gz | 3190.29 | 3264.09 | 3144.00 | 1367.77 | 22,995,661 | 22,374,582 | 21,391,328 |
 
-## Limits of the synthetic benchmark
+</details>
 
-These are warm-cache measurements, without cache flushing or explicit disk
-sync. They measure CLI completion, not durable storage throughput. The synthetic
-benchmark measures no CPU or
-peak-memory usage is measured. With five samples and millisecond operations,
-small differences can be noise; raw samples allow inspection of spread.
+`Metadata` includes only timestamp cleanup; `After` also reuses the filesystem
+query. Intermediate archive sizes equal `After`. All 24 warm-up archives
+passed Arc extraction name/SHA-256 checks; all Arc warm-ups also passed exact
+source nanosecond mtime checks. Ouch time precision was not required to match.
+Measured packing outputs were not individually unpacked. Extraction here
+is validation, not another timing comparison. Raw data:
+[TAR samples](benchmark-tar-results.csv), [run metadata/PAX counts](benchmark-tar-results.json).
 
-Compression levels, thread counts and metadata policies use tool defaults.
-Arc, ouch and system tools have different extraction contracts and checks.
-Tar receives `-C SOURCE .`, zip receives `-q -r ARCHIVE .`, and ouch receives
-explicit sorted children of SOURCE to omit its otherwise retained root directory.
-Arc's single-directory packing already omits the root. Ouch uses `--quiet`;
-all command output is captured. Input directory creation for tar/unzip is
-outside timing; Arc/ouch create their output directory inside the command.
+## Methodology and reproduction
 
-Extracting each tool's own output answers the practical pack/unpack workflow
-question, but mixes reader speed with writer layout and compression choices.
-It does not isolate decompressor speed. Checks cover file names and contents,
-not permission/timestamp restoration, links, adversarial archives or overwrite
-safety. Benchmarks cannot establish general feature or safety superiority.
+Generated payloads and downloaded Rust copies are temporary and removed on
+exit; only reports persist. See [build tooling](build.md#development-tools)
+for commands, optional binaries, probes and chart regeneration. Seed/version
+reproduce content, not timing or identical archives across platforms.
 
-## Comparison with ouch's benchmark
+| Harness | Samples/statistic | Extraction input | Best use |
+|---|---|---|---|
+| `bench.py` | 1 warm-up, 5 runs, median | Each writer's output | Compressibility and file-count extremes |
+| `bench-ouch.py` | 4 warm-ups, 10 runs, Hyperfine mean/deviation | Shared ouch archive | Pinned real source and reader comparison |
+| `bench-zip.py` | 1 warm-up, 7 runs, median | Shared ouch ZIP across environments | Timezone/backend isolation |
+| `bench-tar.py` | 1 warm-up, 5 runs, median | Warm-up validation only | Timestamp overhead and writer changes |
 
-Reviewed upstream benchmark sources at revision `6df14b05ea6d1e600f1f3ff16bccd4a756c20c94`:
+Upstream ouch benchmark reviewed at
+`6df14b05ea6d1e600f1f3ff16bccd4a756c20c94`:
 [setup](https://github.com/ouch-org/ouch/blob/6df14b05ea6d1e600f1f3ff16bccd4a756c20c94/benchmarks/setup-benchmarks.sh),
 [runner](https://github.com/ouch-org/ouch/blob/6df14b05ea6d1e600f1f3ff16bccd4a756c20c94/benchmarks/run-benchmarks.sh),
-[published results](https://github.com/ouch-org/ouch/blob/6df14b05ea6d1e600f1f3ff16bccd4a756c20c94/benchmarks/results.md).
+[results](https://github.com/ouch-org/ouch/blob/6df14b05ea6d1e600f1f3ff16bccd4a756c20c94/benchmarks/results.md).
+Its pinned real-source/shared-input method is better for realistic reader
+comparisons; our synthetic harness adds deterministic extremes, archive
+sizes and content validation. The adapted Rust runner combines those benefits
+with peak-memory samples and temporary payloads. Historical upstream ouch
+0.4.0 scores and GNU tar/Nix results are not baselines for our macOS run.
 
-Their setup pins Rust 1.65.0 source: about 229 MB for TAR and its 27 MB
-compiler subtree for TAR.GZ/ZIP. Their runner uses Hyperfine, four warm-ups,
-fresh outputs and one ouch-created input per format for extraction. The
-published report includes mean, deviation, minimum, maximum and relative time;
-the README identifies the measured ouch as 0.4.0. Those historical numbers
-cannot be compared directly with our current local 0.8.3 run.
+Tool defaults differ in compression, metadata and extraction contracts.
+The synthetic harness measures no CPU or peak memory. Content checks do not
+prove safety or feature parity. No harness flushes caches; small timing gaps
+may be noise. Broader corpora and other platforms are needed for general claims.
 
-| Capability | Arc synthetic benchmark | Upstream ouch benchmark |
-|---|---|---|
-| Input | Three deterministic synthetic workloads, disposable | Pinned real Rust source, downloaded and retained |
-| Formats | TAR, TAR.GZ, ZIP on every workload | Same formats, different input sizes by format |
-| Participants | Arc, tar, zip/unzip, optional ouch | Ouch versus tar or zip/unzip |
-| Warm-up/statistics | One warm-up, five samples, median; raw CSV | Four warm-ups; Hyperfine statistics and relative times |
-| Extraction input | Each tool's own archive | Same ouch-created archive for all readers |
-| Output validation | SHA-256 file-content and name checks | No content validation in the runner |
-| Archive size | Reported alongside speed | Not reported in the result table |
-
-Our synthetic harness is better suited to a lightweight, reproducible smoke comparison
-across compressibility and file-count extremes, with correctness and size
-visible. Their setup is better for a realistic source-tree workload, richer
-timing statistics and comparing readers on an identical archive. Neither
-covers CPU/memory, a broad real-world corpus or functional archive features.
-
-The separate Rust runner above now adds that pinned real-source workload,
-four warm-ups, Hyperfine statistics, peak-memory samples and shared-archive
-extraction, while keeping payloads temporary and validating file contents.
-The two modes answer complementary questions: synthetic extremes and a real
-source tree. Further coverage would need a more diverse real corpus, repeated
-runs on other platforms and explicit compression-level/thread comparisons.
-
-The [TAR follow-up](tar-performance.md) measures timestamp-header cleanup and
-removal of a repeated filesystem query, with separate integer/fractional mtime
-fixtures and a fresh Rust checkout.
+The extraction-metadata change passed four C tests and 306 CLI tests;
+ASan/UBSan passed four C and 82 selected CLI tests. TAR changes passed four
+C and 308 CLI tests; ASan/UBSan passed four C and 108 selected CLI tests.
+Full suites had 26 Windows-only skips, sanitizer selections 12; formatting
+passed. Windows behavior was not executed on this host.

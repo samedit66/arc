@@ -309,9 +309,37 @@ mise exec -- uv run --no-project --python 3.13.15 --with matplotlib==3.11.2 pyth
 For ZIP backend comparisons, `scripts/bench-zip.py` accepts multiple Arc builds
 and an optional libarchive-only probe, checks generated payloads and compares
 native versus explicit UTC environments on the same extraction input.
-See the [performance experiments](performance-experiment.md) for results,
-probe compilation and invocation. Benchmark JSON metadata records `TZ` so
-timezone-sensitive ZIP measurements can be interpreted.
+See the [combined benchmark report](benchmark.md#optimization-experiments)
+for results. JSON metadata records `TZ` for timezone-sensitive comparisons:
+
+```sh
+mise exec -- python scripts/bench-zip.py --ouch /path/to/ouch --compare-utc
+mise exec -- python scripts/bench-tar.py --ouch /path/to/ouch --runs 5
+python scripts/plot-bench.py --zip-experiment docs/benchmark-zip-results.csv
+python scripts/plot-bench.py --tar-experiment docs/benchmark-tar-results.csv
+```
+
+Both scripts accept `--arc-before`; ZIP also accepts `--arc-experimental` and
+`--libarchive`, while TAR accepts `--arc-metadata` and `--source`. Build each
+selected Arc in native Release with the same backend. TAR's recorded baseline
+is `28545fb`; its intermediate build adds only timestamp cleanup to that
+revision. Generated TAR fixtures and optional source copies are temporary.
+
+The POSIX diagnostic probe uses the same libarchive as Arc:
+
+```sh
+export PKG_CONFIG_PATH="$(brew --prefix libarchive)/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+mkdir -p build/bench
+cc -std=c11 -O3 scripts/bench-libarchive.c -o build/bench/libarchive-probe $(pkg-config --cflags --libs libarchive)
+mise exec -- python scripts/bench-zip.py --ouch /path/to/ouch --libarchive build/bench/libarchive-probe --compare-utc
+```
+
+The optional zlib-ng prototype uses `ZLIB_COMPAT=ON`, `BUILD_SHARED_LIBS=ON`
+and `CMAKE_BUILD_TYPE=Release`, with an isolated libarchive linked to it.
+The recorded Mac experiment copied the libarchive dylib, redirected its zlib
+load path, renewed its signature and linked only the experimental executable
+to that copy. Its level-9 variant sets ZIP `compression-level=9` in an isolated
+adapter. These are diagnostics, not a supported distribution configuration.
 
 `mise run format` formats the C sources. `mise run check` builds the project,
 runs the CLI tests and checks C formatting; both formatting tasks require
