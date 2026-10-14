@@ -98,3 +98,46 @@ def test_release_rejects_moved_tag(release_repo):
 def test_release_rejects_missing_tag(release_repo):
     repo, commit = release_repo
     assert validate(repo, "v0.1.0", commit).returncode != 0
+
+
+def test_musl_release_overrides_inherited_system_compiler(tmp_path):
+    root = VALIDATOR.parents[1]
+    work = tmp_path / "build"
+    vcpkg = work / "vcpkg"
+    (vcpkg / ".git").mkdir(parents=True)
+    tools = tmp_path / "tools"
+    tools.mkdir()
+
+    def script(path, source):
+        path.write_text("#!/bin/sh\nset -eu\n" + source, newline="\n")
+        path.chmod(0o755)
+
+    script(tools / "git", "exit 0\n")
+    script(vcpkg / "bootstrap-vcpkg.sh", "exit 0\n")
+    script(vcpkg / "vcpkg", '[ "$CC" = musl-gcc ] || exit 7\n')
+    script(tools / "cmake", '''
+[ "$CC" = musl-gcc ] || exit 8
+case "$1" in
+    --build)
+        mkdir -p "$ARC_RELEASE_BUILD_DIR/arc"
+        printf '#!/bin/sh\\nprintf "arc %s\\\\n"\\n' "$ARC_TEST_VERSION" > "$ARC_RELEASE_BUILD_DIR/arc/arc"
+        chmod 755 "$ARC_RELEASE_BUILD_DIR/arc/arc" ;;
+    *) printf '%s\\n' "$@" > "$ARC_TEST_FLAGS" ;;
+esac
+''')
+    script(tools / "readelf", '''
+if [ "$1" = -hW ]; then printf '  Machine: Advanced Micro Devices X86-64\\n'; fi
+''')
+    flags = tmp_path / "flags"
+    env = dict(os.environ, CC="gcc", ARC_RELEASE_BUILD_DIR=work.as_posix(),
+               ARC_TEST_VERSION=(root / "VERSION").read_text().strip(),
+               ARC_TEST_FLAGS=flags.as_posix(),
+               PATH=str(tools) + os.pathsep + os.environ["PATH"])
+    result = subprocess.run(
+        [os.environ.get("MISE_BASH_PATH", "bash"),
+         (root / "scripts/build-release.sh").as_posix(), "linux-x86_64"],
+        env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "VCPKG_CHAINLOAD_TOOLCHAIN_FILE=" in flags.read_text()
+    assert "musl-toolchain.cmake" in flags.read_text()

@@ -32,6 +32,11 @@ else
     bash "$vcpkg_root/bootstrap-vcpkg.sh" -disableMetrics
 fi
 export VCPKG_DISABLE_METRICS=1
+if [[ "$target" == linux-* ]]; then
+    # Autotools recipes honor inherited CC, while CMake uses the toolchain.
+    # Keep both on musl even when mise exported the normal system compiler.
+    export CC=musl-gcc
+fi
 "$vcpkg_root/vcpkg" install --triplet "$triplet" --overlay-triplets "$repo/release/triplets" \
     --x-manifest-root "$repo/release" --x-install-root "$work/deps"
 toolchain_flags=()
