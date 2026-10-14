@@ -115,6 +115,8 @@ ZIP and 7z may compress entries internally even when outer compression is `none`
 
 Libarchive provides read/write support for TAR/PAX, ZIP, 7z, CPIO, AR, ISO9660, XAR and WARC, with format-specific limits. RAR/RAR5, CAB and LHA/LZH are read-only. Available compression depends on the linked build. See [libarchive's format summary](https://github.com/libarchive/libarchive/wiki/LibarchiveFormats).
 
+WARC requires libarchive 3.8.9 or newer: older readers misreport entry offsets or skip already-read content. XAR requires libarchive 3.8.2 or newer because older readers report archive offsets at entry EOF. With an older backend, Arc returns `ARC_UNSUPPORTED` for the affected format's capabilities, creation and reading before exposing entries. Other formats remain available.
+
 Reading uses content detection and enables available archive readers rather than applying a filename-extension whitelist. Additional detected formats can be readable without becoming named creation options. `raw`, `mtree` and `shar` are not promised as ordinary multi-file extraction formats: their semantics differ from the primary abstraction.
 
 7z requires outer compression `none`: its reader needs seekable archive data.

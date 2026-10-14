@@ -118,6 +118,17 @@ static ArcResult probe_free(struct archive *a, int write) {
                                 : ar_result(ARC_IO_ERROR, "Capability probe cleanup failed.");
 }
 
+static ArcResult format_support(int format) {
+    /* Older readers return incorrect EOF offsets and skip already-read body
+     * bytes again. Both fixes are present starting with libarchive 3.8.9. */
+    if (format == ARCHIVE_FORMAT_WARC && archive_version_number() < 3008009)
+        return ar_result(ARC_UNSUPPORTED, "WARC requires libarchive 3.8.9 or newer.");
+    /* Older XAR readers use the archive offset at EOF of each entry. */
+    if (format == ARCHIVE_FORMAT_XAR && archive_version_number() < 3008002)
+        return ar_result(ARC_UNSUPPORTED, "XAR requires libarchive 3.8.2 or newer.");
+    return ar_okay();
+}
+
 ArcResult arc_get_capabilities_impl(const ArcOptions *options, unsigned *out) {
     if (!options || !options->format || !options->compression || !out)
         return ar_result(ARC_INVALID_ARGUMENT, "Missing archive configuration.");
@@ -128,6 +139,11 @@ ArcResult arc_get_capabilities_impl(const ArcOptions *options, unsigned *out) {
     const Format *c = lookup(filters, ARRAY_COUNT(filters), options->compression);
     if (!f || !c)
         return ar_result(ARC_UNSUPPORTED, "Unknown archive configuration.");
+    ArcResult support = format_support(!strcmp(f->name, "warc")  ? ARCHIVE_FORMAT_WARC
+                                       : !strcmp(f->name, "xar") ? ARCHIVE_FORMAT_XAR
+                                                                 : 0);
+    if (ar_failed(support))
+        return support;
     if (!strcmp(f->name, "7z") && strcmp(c->name, "none"))
         return ar_result(ARC_UNSUPPORTED, "7z requires seekable input without outer compression.");
     struct archive *read = archive_read_new(), *write = archive_write_new();
@@ -291,6 +307,9 @@ ArcEntryType entry_type(struct archive_entry *e) {
 
 ArcResult read_header(struct archive *a, struct archive_entry **e, int *end) {
     int status = archive_read_next_header(a, e);
+    ArcResult support = format_support(archive_format(a) & ARCHIVE_FORMAT_BASE_MASK);
+    if (ar_failed(support))
+        return support;
     if ((archive_format(a) & ARCHIVE_FORMAT_BASE_MASK) == ARCHIVE_FORMAT_7ZIP &&
         archive_filter_code(a, 0) != ARCHIVE_FILTER_NONE)
         return ar_result(ARC_UNSUPPORTED, "7z requires seekable input without outer compression.");
