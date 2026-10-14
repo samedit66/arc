@@ -33,14 +33,18 @@ else
 fi
 export VCPKG_DISABLE_METRICS=1
 "$vcpkg_root/vcpkg" install --triplet "$triplet" --overlay-triplets "$repo/release/triplets" \
-    --x-manifest-root "$repo/release" --x-install-root "$work/deps" --clean-after-build
+    --x-manifest-root "$repo/release" --x-install-root "$work/deps"
+toolchain_flags=()
+if [[ "$target" == linux-* ]]; then
+    toolchain_flags+=("-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$repo/release/triplets/musl-toolchain.cmake")
+fi
 cmake -S . -B "$work/arc" -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="$vcpkg_root/scripts/buildsystems/vcpkg.cmake" \
     -DVCPKG_TARGET_TRIPLET="$triplet" -DVCPKG_INSTALLED_DIR="$work/deps" \
     -DVCPKG_MANIFEST_DIR="$repo/release" -DVCPKG_MANIFEST_INSTALL=OFF \
     -DVCPKG_OVERLAY_TRIPLETS="$repo/release/triplets" \
     -DCMAKE_BUILD_TYPE=Release -DARC_BUILD_CLI=ON -DARC_DEVELOPER_WARNINGS=ON -DARC_BUILD_API_TESTS=ON \
-    -DCMAKE_EXE_LINKER_FLAGS="$link_flags"
+    -DCMAKE_EXE_LINKER_FLAGS="$link_flags" ${toolchain_flags[@]+"${toolchain_flags[@]}"}
 cmake --build "$work/arc" --parallel 4
 binary=$work/arc/arc$exe
 [[ "$("$binary" --version)" == "arc $(cat VERSION)" ]]

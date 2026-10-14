@@ -2,7 +2,6 @@ import os
 import hashlib
 import io
 from pathlib import Path
-import platform
 import shutil
 import subprocess
 import tarfile
@@ -34,6 +33,7 @@ def installer(tmp_path):
     install_dir = tmp_path / "installed with spaces and 'quotes'"
     write_script(tools / "brew", 'printf "/unused/libarchive\\n"\n')
     host_os = subprocess.check_output(["uname", "-s"], text=True).strip()
+    host_arch = subprocess.check_output(["uname", "-m"], text=True).strip()
     write_script(tools / "uname", 'if [ "$1" = -m ]; then printf "%s\\n" "$TEST_ARCH"; else printf "%s\\n" "$TEST_OS"; fi\n')
     for command, stage in [("cp", "copy"), ("mv", "publish")]:
         original = Path(shutil.which(command)).as_posix()
@@ -106,7 +106,7 @@ chmod 755 "$ARC_BUILD_DIR/arc$TEST_EXE"
         TEST_SOURCE=source.as_posix(), TEST_COMMIT=COMMIT,
         TEST_EXE=".exe" if os.name == "nt" else "",
         TEST_OS=host_os,
-        TEST_ARCH=platform.machine(),
+        TEST_ARCH=host_arch,
         ARC_BUILD_CONFIG="1", ARC_SANITIZE="1", FILEKIT_SANITIZE="1",
     )
     shell = os.environ.get("MISE_BASH_PATH") if os.name == "nt" else shutil.which("sh")

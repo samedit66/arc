@@ -172,6 +172,18 @@ jobs:
         env:
           RELEASE_TARGET: ${{ matrix.target }}
         run: mise run test-release -- "$RELEASE_TARGET"
+      - name: Save failed binary build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-${{ matrix.target }}
+          path: |
+            ${{ runner.temp }}/arc-release/vcpkg/buildtrees/libarchive/**/*.log
+            ${{ runner.temp }}/arc-release/vcpkg/buildtrees/libarchive/**/CMakeConfigureLog.yaml
+            ${{ runner.temp }}/arc-release/vcpkg/buildtrees/libarchive/**/CMakeCache.txt
+            ${{ runner.temp }}/arc-release/vcpkg/buildtrees/libarchive/**/config.h
+            ${{ runner.temp }}/arc-release/arc/CMakeCache.txt
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.target }}

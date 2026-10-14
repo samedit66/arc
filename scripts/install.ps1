@@ -29,7 +29,7 @@ function Assert-RegularDestination([string] $Path) {
 }
 function Publish-File([string] $Source, [string] $Destination) {
     Assert-RegularDestination $Destination
-    if ([IO.File]::Exists($Destination)) { [IO.File]::Replace($Source, $Destination, $null) }
+    if ([IO.File]::Exists($Destination)) { [IO.File]::Replace($Source, $Destination, [NullString]::Value) }
     else { [IO.File]::Move($Source, $Destination) }
 }
 $destination = Join-Path $InstallDir 'arc.exe'
