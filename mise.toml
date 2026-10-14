@@ -75,6 +75,18 @@ shell = "bash -euo pipefail -c"
 run = "bash scripts/check-consumers.sh"
 dir = "{{config_root}}"
 
+[tasks.bench]
+description = "Build Release and benchmark arc against tar and zip on generated fixtures"
+shell = "bash -euo pipefail -c"
+run = "bash scripts/bench.sh"
+dir = "{{config_root}}"
+
+[tasks.bench-ouch]
+description = "Benchmark Arc on ouch's Rust workloads with Hyperfine"
+shell = "bash -euo pipefail -c"
+run = "bash scripts/bench-ouch.sh"
+dir = "{{config_root}}"
+
 [tasks.release]
 description = "Build Release with pinned vcpkg dependencies for the host"
 shell = "bash -euo pipefail -c"

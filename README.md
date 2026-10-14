@@ -117,6 +117,21 @@ text, binary chunks and incremental reading.
 See the [tutorial](docs/tutorial.md#use-it-from-c) for more examples and the
 header for full API contracts.
 
+## Benchmark
+
+To my surprise, arc actually outruns some of the tools it wants to replace.
+I was aiming for fewer flags, but I’ll take fewer milliseconds too.
+
+On a local macOS benchmark using Rust’s source code, arc packed TAR archives
+about 8× faster than the system tar, and extracted TAR and TAR.GZ archives
+in about 25–32% less time than [ouch](https://github.com/ouch-org/ouch).
+
+Ouch still won at packing and ZIP extraction. Fair enough — you can’t
+win every race in your first pair of sneakers.
+
+See the [benchmarks](docs/benchmark.md) for charts, archive sizes,
+memory usage and reproducible runs.
+
 ## Build
 
 With the [build prerequisites](docs/install.md#prerequisites) installed,

@@ -253,6 +253,59 @@ consumers exercise both header orders with GDI enabled.
 
 ## Development tools
 
+Run `mise run bench` to build a native Release binary and compare Arc with
+`tar` for TAR/TAR.GZ and `zip`/`unzip` for ZIP. Requires these tools on PATH;
+the Python script uses only the standard library. This native build uses the
+local libarchive, unlike the pinned static distribution from `mise run release`.
+
+The benchmark generates 2,000 small text files, a 16 MiB text file and a
+16 MiB seeded pseudorandom binary file in a temporary directory, then removes
+all fixtures, archives and extracted files automatically. Nothing large is
+stored in the repository. To run a smaller experiment:
+
+```sh
+mise run bench -- --size-mib 1 --small-files 100 --runs 2
+```
+
+Options include `--seed` (default 1729), `--size-mib`, `--small-files`, `--runs`,
+`--output` and optional `--ouch /path/to/ouch`. Ouch is not downloaded or
+installed by the benchmark. To benchmark an existing binary without building, use
+`python scripts/bench.py --arc /absolute/path/to/arc`.
+
+Each format and dataset gets one warm-up per tool and five measured runs,
+with rotating tool order. The table reports median wall-clock milliseconds
+for packing and unpacking and archive bytes. Fresh output paths are used each
+time; SHA-256 content checks run outside the timed commands. Raw samples go
+to `build/bench/results.csv`; the adjacent JSON records fixture parameters,
+content hashes, platform, executable paths and tool versions.
+
+This measures CLI defaults with warm filesystem caches, including process
+startup and filesystem work. Compression settings can differ between tools;
+compare archive size alongside time. Extraction safety checks also differ.
+Times do not include an explicit disk sync and are not cold-cache or durable
+write measurements. Seed and fixture version reproduce file contents, not
+identical timing or archive bytes across different tools and platforms.
+See [benchmark results and methodology comparison](benchmark.md) for a recorded
+run including ouch and the limitations of comparing these tools.
+
+`mise run bench-ouch -- --ouch /path/to/ouch --hyperfine /path/to/hyperfine`
+builds Arc in Release and runs ouch's Rust 1.65.0 workloads with Arc added.
+It downloads the pinned Rust checkout into a temporary directory, removes
+`.git` from the benchmark copy and uses the compiler subtree for compressed
+formats. Four warm-ups and ten measured runs per command use Hyperfine;
+all readers extract the same ouch-created archive. Payloads are removed on
+exit. `--source /path/to/rust` reuses an existing checkout at the pinned
+revision, without changing it. JSON, Markdown, sizes and raw timing CSV reports
+go to `build/bench/ouch-workload`. Requires git and the same archive tools.
+
+The optional `scripts/plot-bench.py` renders committed CSV snapshots as SVG
+and PNG figures in `docs/assets/benchmark`. It needs matplotlib only for
+plotting, not for building Arc or running either benchmark:
+
+```sh
+mise exec -- uv run --no-project --python 3.13.15 --with matplotlib==3.11.2 python scripts/plot-bench.py
+```
+
 `mise run format` formats the C sources. `mise run check` builds the project,
 runs the CLI tests and checks C formatting; both formatting tasks require
 clang-format. See [the test guide](../tests/README.md) for focused runs,
