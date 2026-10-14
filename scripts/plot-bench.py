@@ -51,12 +51,32 @@ def main() -> None:
     parser.add_argument("--rust", type=Path, default=Path("docs/benchmark-ouch-results.csv"))
     parser.add_argument("--output", type=Path, default=Path("docs/assets/benchmark"))
     parser.add_argument("--zip-experiment", type=Path, help="render only the ZIP experiment summary")
+    parser.add_argument("--tar-experiment", type=Path, help="render only the TAR experiment summary")
     parser.add_argument("--memory-experiment", type=Path,
                         default=Path("docs/benchmark-memory-results.csv"))
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 10,
                          "svg.fonttype": "none", "axes.titleweight": "bold"})
+    if args.tar_experiment:
+        with args.tar_experiment.open(newline="") as stream:
+            samples = list(csv.DictReader(stream))
+        figure, axes = plt.subplots(2, 2, figsize=(11, 7), layout="constrained")
+        figure.suptitle("TAR packing experiments · macOS ARM64\nMedian of 5 runs · lower is better", fontsize=16)
+        tools = ("before", "arc", "ouch")
+        for axis, dataset, metric in zip(axes.flat, ("integer", "integer", "source", "source"),
+                                         ("seconds", "archive_bytes", "seconds", "archive_bytes")):
+            scale = 1000 if metric == "seconds" else 1 / 1048576
+            values = [statistics.median(float(row[metric]) * scale for row in samples
+                      if (row["dataset"], row["format"], row["tool"]) == (dataset, "tar", tool))
+                      for tool in tools]
+            draw_bars(axis, ["Arc before", "Arc after", "ouch"], values, tools,
+                      "milliseconds" if metric == "seconds" else "MiB")
+            axis.set_title(("2,000 files / integer mtime" if dataset == "integer" else
+                            "Rust source / fractional mtime") + (" / time" if metric == "seconds" else " / size"))
+        save_chart(figure, args.output, "tar-experiment")
+        print(f"TAR experiment summary saved in {args.output}.")
+        return
     if args.zip_experiment:
         with args.zip_experiment.open(newline="") as stream:
             experiments = list(csv.DictReader(stream))

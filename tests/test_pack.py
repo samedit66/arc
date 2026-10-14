@@ -194,6 +194,28 @@ def test_tar_hardlinks_preserve_fractional_mtime(arc, tmp_path, suffix):
     assert all(path.read_bytes() == b"shared" for path in restored)
 
 
+@pytest.mark.parametrize("nanoseconds", [0, 123456700])
+def test_tar_only_stores_supported_timestamps(arc, tmp_path, nanoseconds):
+    source = tmp_path / "source"
+    source.mkdir()
+    ordinary = source / "plain.txt"
+    ordinary.write_bytes(b"payload")
+    os.utime(ordinary, ns=(1600000000123456700, 1700000000000000000 + nanoseconds))
+    timestamp = ordinary.stat().st_mtime_ns
+    archive_path = tmp_path / "packed.tar"
+    arc("pack", archive_path, source)
+    with tarfile.open(archive_path) as archive:
+        entry = archive.getmember("plain.txt")
+        assert not {"atime", "ctime", "LIBARCHIVE.creationtime"} & entry.pax_headers.keys()
+        stored_time = Decimal(entry.pax_headers.get("mtime", str(entry.mtime)))
+        assert stored_time == Decimal(timestamp) / 1_000_000_000
+        if nanoseconds == 0:
+            assert entry.offset_data - entry.offset == 512
+    arc("unpack", archive_path, "output")
+    assert (tmp_path / "output/plain.txt").read_bytes() == b"payload"
+    assert (tmp_path / "output/plain.txt").stat().st_mtime_ns == timestamp
+
+
 def test_zip_refuses_multiple_hardlinks(arc, tmp_path):
     source = tmp_path / "hard-source"
     source.mkdir()

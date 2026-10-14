@@ -640,6 +640,7 @@ Use wide-character long-path-capable operations with deliberate path conversion;
 ## 11. Metadata policy
 
 - Preserve source modification time and ordinary permission bits where the format can represent them.
+- Omit source access, change and creation times; extraction does not restore them. This avoids unnecessary PAX records while retaining fractional modification times.
 - Synthetic text and chunk entries use the current modification time and ordinary file permissions 0644.
 - Strip setuid, setgid and sticky bits.
 - On POSIX extraction, ordinary permissions are limited by the process umask; do not request exact permission restoration that bypasses it.

@@ -317,11 +317,8 @@ ArcResult arc_add_text_impl(ArcWriter *w, const char *path, const char *text) {
 }
 
 static ArcResult pack_entry(ArcWriter *w, struct archive *disk, struct archive_entry *e,
-                            const char *source, const char *stored) {
-    ArcFsInfo identity;
-    ArcResult r = ar_from_fs(arc_fs_info(source, &identity));
-    if (ar_failed(r))
-        return writer_failure(w, r);
+                            const char *source, const char *stored, ArcFsInfo identity) {
+    ArcResult r = ar_okay();
     if (!identity.exists)
         return writer_failure(w, ar_result(ARC_IO_ERROR, "Source disappeared: '%s'.", source));
     char *name = NULL, *alias = NULL;
@@ -466,7 +463,7 @@ static ArcResult add_source(ArcWriter *w, const char *source, const char *stored
         if (!ar_failed(r) && !excluded && !(first && !*stored)) {
             r = ar_join(stored, suffix, &name);
             if (!ar_failed(r))
-                r = pack_entry(w, disk, e, path, name);
+                r = pack_entry(w, disk, e, path, name, current);
         }
         if (!ar_failed(r) && !file_only && !excluded && current.directory && !current.symbolic &&
             archive_read_disk_can_descend(disk) && archive_read_disk_descend(disk) != ARCHIVE_OK)

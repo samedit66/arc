@@ -231,6 +231,9 @@ void clean_metadata(struct archive_entry *e) {
     archive_entry_set_gid(e, 0);
     archive_entry_set_uname(e, NULL);
     archive_entry_set_gname(e, NULL);
+    archive_entry_unset_atime(e);
+    archive_entry_unset_ctime(e);
+    archive_entry_unset_birthtime(e);
     archive_entry_acl_clear(e);
     archive_entry_xattr_clear(e);
     archive_entry_set_fflags(e, 0, 0);

@@ -263,3 +263,7 @@ extraction, while keeping payloads temporary and validating file contents.
 The two modes answer complementary questions: synthetic extremes and a real
 source tree. Further coverage would need a more diverse real corpus, repeated
 runs on other platforms and explicit compression-level/thread comparisons.
+
+The [TAR follow-up](tar-performance.md) measures timestamp-header cleanup and
+removal of a repeated filesystem query, with separate integer/fractional mtime
+fixtures and a fresh Rust checkout.
