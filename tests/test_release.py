@@ -105,6 +105,8 @@ def test_musl_release_overrides_inherited_system_compiler(tmp_path):
     work = tmp_path / "build"
     vcpkg = work / "vcpkg"
     (vcpkg / ".git").mkdir(parents=True)
+    for directory in ("linux", "asm", "asm-generic"):
+        (work / "kernel-headers" / directory).mkdir(parents=True)
     tools = tmp_path / "tools"
     tools.mkdir()
 

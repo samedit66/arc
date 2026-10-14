@@ -36,6 +36,14 @@ if [[ "$target" == linux-* ]]; then
     # Autotools recipes honor inherited CC, while CMake uses the toolchain.
     # Keep both on musl even when mise exported the normal system compiler.
     export CC=musl-gcc
+    export ARC_MUSL_KERNEL_HEADERS="$work/kernel-headers"
+    if [[ ! -d "$ARC_MUSL_KERNEL_HEADERS/linux" || ! -d "$ARC_MUSL_KERNEL_HEADERS/asm" || ! -d "$ARC_MUSL_KERNEL_HEADERS/asm-generic" ]]; then
+        mkdir -p "$ARC_MUSL_KERNEL_HEADERS"
+        # Expose kernel UAPI headers without exposing glibc's libc headers.
+        kernel_triplet=$(gcc -dumpmachine)
+        cp -R /usr/include/linux /usr/include/asm-generic \
+            "/usr/include/$kernel_triplet/asm" "$ARC_MUSL_KERNEL_HEADERS/"
+    fi
 fi
 "$vcpkg_root/vcpkg" install --triplet "$triplet" --overlay-triplets "$repo/release/triplets" \
     --x-manifest-root "$repo/release" --x-install-root "$work/deps"

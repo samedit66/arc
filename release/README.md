@@ -40,6 +40,8 @@ ARC_RELEASE_BUILD_DIR=/tmp/arc-release mise run test-release -- darwin-arm64
 Use Homebrew for CMake and build tools on macOS. Build products, downloaded
 sources and installed dependencies remain under the temporary build directory.
 The pinned vcpkg checkout can use a binary cache via `VCPKG_DEFAULT_BINARY_CACHE`.
+Only Release dependencies are built. Linux uses the same `musl-gcc` for CMake
+and Autotools and isolates kernel UAPI headers from the host's glibc headers.
 
 `licenses/` contains additional compiler/runtime notices: GCC GPLv3 and runtime
 exception 3.1 (GCC 14.2.0 upstream), musl COPYRIGHT (upstream, retrieved
