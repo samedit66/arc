@@ -23,7 +23,7 @@ paths and never overwrite existing files or links.
 
 - `arc.h`: public API declarations and authoritative operation contracts.
 - `arc.c`: public wrappers, locale scopes, and cleanup sequencing.
-- `main.c`: CLI parsing and commands: pack, unpack, list, info, verify.
+- `cli/main.c`: CLI parsing and commands: pack, unpack, list, info, verify.
 - `internal/`: archive writing, reading, extraction, path validation,
   and the libarchive adapter.
 - `filekit/`: independently buildable C11 filesystem library with

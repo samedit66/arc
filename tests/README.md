@@ -112,3 +112,5 @@ multiple chunks through begin/write/end for every available creation format.
 and preservation of both diagnostics. `test_strip_root.py` checks preflight rejection, original-path selection, link
 transformation and collision safety. `test_tree.py` checks implicit parents,
 ordering, repeated records and escaped display names.
+
+Activity display tests use `arc_test_cli_progress` to hold the display open independently of archive processing speed. POSIX PTY checks cover animation, cleanup, escaping, ASCII fallback, quick completion and redirected output. Windows console rendering requires a manual terminal check.

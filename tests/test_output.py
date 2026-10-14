@@ -25,7 +25,7 @@ def test_redirected_messages_are_plain(arc, simple_tar, no_color):
     assert usage.stderr.startswith("Error: Missing archive path\n")
 
 
-def terminal_run(binary, arguments, cwd, *, stream="stdout", no_color=None, term="xterm-256color", utf8=True):
+def terminal_run(binary, arguments, cwd, *, stream="stdout", no_color=None, term="xterm-256color", utf8=True, columns=None):
     import pty
 
     environment = os.environ.copy()
@@ -35,6 +35,11 @@ def terminal_run(binary, arguments, cwd, *, stream="stdout", no_color=None, term
     if no_color is not None:
         environment["NO_COLOR"] = no_color
     master, slave = pty.openpty()
+    if columns is not None:
+        import fcntl
+        import struct
+        import termios
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, columns, 0, 0))
     process = None
     try:
         process = subprocess.Popen(
@@ -170,3 +175,50 @@ def test_archive_conflicts_do_not_suggest_another_destination(arc, make_tar, pat
     result = arc("unpack", archive, "output", success=False)
     assert "Conflicting archive entries:" in result.stderr
     assert "Choose another destination" not in result.stderr
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX pseudoterminal test")
+@pytest.mark.parametrize("utf8", [True, False])
+def test_activity_frames_and_cleanup(arc_binary, tmp_path, utf8):
+    binary = arc_binary.with_name("arc_test_cli_progress")
+    result, output = terminal_run(binary, ["sample.tar"], tmp_path, stream="stderr", utf8=utf8)
+    assert result.returncode == 0
+    assert result.stdout == b""
+    frames = [frame for frame in output.split("\r\x1b[2K") if frame]
+    assert len(frames) >= 2
+    assert len(set(frames)) >= 2
+    assert all("Extracting: sample.tar" in frame for frame in frames)
+    assert ("⣿" if utf8 else "#") in output
+    assert output.endswith("\r\x1b[2K")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX pseudoterminal test")
+def test_activity_fast_dumb_and_redirected(arc_binary, tmp_path):
+    binary = arc_binary.with_name("arc_test_cli_progress")
+    for arguments, term in [(["sample.tar", "0"], "xterm"), (["sample.tar"], "dumb")]:
+        result, output = terminal_run(binary, arguments, tmp_path, stream="stderr", term=term)
+        assert result.returncode == 0
+        assert output == ""
+    result = subprocess.run([str(binary)], capture_output=True, timeout=5)
+    assert result.returncode == 0
+    assert result.stdout == result.stderr == b""
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX pseudoterminal test")
+def test_activity_escapes_path(arc_binary, tmp_path):
+    binary = arc_binary.with_name("arc_test_cli_progress")
+    result, output = terminal_run(binary, ["bad\x1b[2J\n\u0085.tar"], tmp_path, stream="stderr")
+    assert result.returncode == 0
+    assert "bad\\x1b[2J\\x0a\\u0085.tar" in output
+    assert "\x1b[2J" not in output
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX pseudoterminal test")
+@pytest.mark.parametrize("columns", [5, 12, 25, 80])
+def test_activity_stays_within_terminal(arc_binary, tmp_path, columns):
+    binary = arc_binary.with_name("arc_test_cli_progress")
+    result, output = terminal_run(binary, ["длинное-имя-" * 30], tmp_path,
+                                  stream="stderr", columns=columns)
+    assert result.returncode == 0
+    for frame in output.split("\r\x1b[2K"):
+        assert len(frame) < columns

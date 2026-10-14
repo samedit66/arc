@@ -25,7 +25,9 @@ arc has one public header and private archive modules. The independently buildab
 |---|---|
 | `arc.h` | Public types, declarations and contracts; standard C headers only. |
 | `arc.c` | Public operation wrappers, locale scopes, output publication and cleanup sequencing. |
-| `main.c` | CLI parsing, automatic source/destination selection, tree display and diagnostics. |
+| `cli/output.{h,c}` | CLI messages and safe text display. |
+| `cli/progress.{h,c}` | CLI activity animation and its thread lifecycle. |
+| `cli/main.c` | CLI parsing, automatic source/destination selection, tree display and diagnostics. |
 | `internal/pack.c` | Whole-operation packing, source basename/root mapping and writer ownership. |
 | `internal/arc_internal.h` | Private operation entry points; no writer representation. |
 | `internal/writer.c` | Writer state and ownership, chunks, filesystem traversal through libarchive, selected hard-link identity, close/discard. |
@@ -44,7 +46,7 @@ arc has one public header and private archive modules. The independently buildab
 Dependency direction:
 
 ```text
-main.c -> arc.h
+cli/main.c -> arc.h
 arc.c -> private operations + platform text + support
 writer/reader/unpack -> libarchive adapter + filekit + shared path rules
 platform text/support -> private filekit text helpers (in-repository integration)
@@ -797,7 +799,7 @@ No interactive overwrite prompt, --overwrite, automatic skipping or silent subst
 Exit codes: 0 for success, 1 for operational failure, 2 for command-line usage errors. Diagnostic output is English and written to stderr. CLI status and diagnostic text
 escapes control characters from paths and backend messages; presentation color
 sequences are generated separately. A stdout flush failure produces a nonzero
-exit status, including failures discovered after buffered list/info output. Cleanup failures are reported separately from the original failure. `main.c` uses `wmain` on Windows and `main` on other targets.
+exit status, including failures discovered after buffered list/info output. Cleanup failures are reported separately from the original failure. `cli/main.c` uses `wmain` on Windows and `main` on other targets.
 
 ## 15. API sequence examples
 

@@ -226,3 +226,12 @@ encryption protects and what remains visible.
 
 The header contains full contracts and examples for every public function.
 Examples that require an existing writer, reader or callback state that prerequisite. arc reports its own errors and errors returned by the backend through result values; fatal termination inside libarchive is outside that guarantee.
+
+### Activity display
+
+Long-running `pack`, `unpack`, `verify`, `info`, and `list --tree` operations
+show an animated pixel activity bar with the archive path on terminal stderr.
+It appears after 200 ms and disappears before results or errors. It indicates
+activity, without estimating completion. Plain `list` prints entries directly.
+Redirected stderr and `TERM=dumb` disable the animation automatically; non-UTF-8
+terminals use ASCII. There is no flag or environment variable to silence output.

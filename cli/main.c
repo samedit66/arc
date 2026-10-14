@@ -4,6 +4,8 @@
 #define _DEFAULT_SOURCE
 #endif
 #include "arc.h"
+#include "output.h"
+#include "progress.h"
 #include "internal/support.h"
 #include <errno.h>
 #include <inttypes.h>
@@ -26,83 +28,6 @@
 #endif
 
 static const char ARC_PROGRAM_NAME[] = "arc";
-
-/* Presentation belongs to the CLI; NO_COLOR disables ANSI color, not emoji. */
-typedef enum { MESSAGE_SUCCESS, MESSAGE_ERROR, MESSAGE_WARNING } MessageKind;
-
-static void display_text(FILE *out, const char *text, int escape_backslash) {
-    for (const unsigned char *p = (const unsigned char *)text; *p; ++p) {
-        if (*p < 32 || *p == 127)
-            fprintf(out, "\\x%02x", *p);
-        else if (*p == 0xc2 && p[1] >= 0x80 && p[1] <= 0x9f)
-            fprintf(out, "\\u00%02x", *++p);
-        else if (escape_backslash && *p == '\\')
-            fputs("\\\\", out);
-        else
-            fputc(*p, out);
-    }
-}
-
-static void message(MessageKind kind, const char *label, const char *format, ...) {
-    FILE *out = kind == MESSAGE_SUCCESS ? stdout : stderr;
-    const char *term = getenv("TERM");
-    const char *no_color = getenv("NO_COLOR");
-    int terminal = 0, unicode = 0;
-#ifdef _WIN32
-    HANDLE handle = GetStdHandle(out == stdout ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE);
-    DWORD original_mode = 0;
-    int changed_mode = 0;
-    if (GetConsoleMode(handle, &original_mode)) {
-        terminal = 1;
-        unicode = GetConsoleOutputCP() == CP_UTF8;
-    }
-#else
-    terminal = isatty(fileno(out));
-    const char *codeset = nl_langinfo(CODESET);
-    unicode = !strcmp(codeset, "UTF-8") || !strcmp(codeset, "UTF8");
-#endif
-    if (term && !strcmp(term, "dumb"))
-        terminal = 0;
-    int color = terminal && !(no_color && *no_color);
-#ifdef _WIN32
-    if (color && !(original_mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING)) {
-        changed_mode = SetConsoleMode(handle, original_mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
-        color = changed_mode;
-    }
-#endif
-    if (terminal && unicode) {
-        const char *emoji[] = {"✅ ", "❌ ", "⚠️ "};
-        fputs(emoji[kind], out);
-    }
-    if (color) {
-        const char *colors[] = {"\033[32m", "\033[31m", "\033[33m"};
-        fputs(colors[kind], out);
-    }
-    fputs(label, out);
-    if (color)
-        fputs("\033[0m", out);
-    va_list arguments;
-    va_start(arguments, format);
-    va_list copy;
-    va_copy(copy, arguments);
-    int length = vsnprintf(NULL, 0, format, copy);
-    va_end(copy);
-    char *text = length >= 0 ? malloc((size_t)length + 1) : NULL;
-    if (text) {
-        vsnprintf(text, (size_t)length + 1, format, arguments);
-        display_text(out, text, 0);
-        free(text);
-    } else
-        fputs(" [message unavailable]", out);
-    va_end(arguments);
-    fputc('\n', out);
-#ifdef _WIN32
-    if (changed_mode) {
-        fflush(out);
-        SetConsoleMode(handle, original_mode);
-    }
-#endif
-}
 
 static int report(ArcResult r) {
     if (r.code == ARC_OK)
@@ -294,7 +219,9 @@ static ArcResult source_directory(const char *path, int *directory) {
 static int pack_sources(const char *output, const ArcOptions *options, int keep_root, int sources,
                         char **args) {
     ArcPackOptions pack_options = {.configuration = options, .keep_root = keep_root};
+    Progress *progress = progress_start("Creating", output);
     ArcResult r = arc_pack_ex(output, (const char *const *)args, (size_t)sources, &pack_options);
+    progress_stop(progress);
     if (report_operation(r, "Cannot create", output, NULL)) {
         if (r.code == ARC_INVALID_ARGUMENT) {
             fprintf(stderr, "Use %s pack --help for usage.\n", ARC_PROGRAM_NAME);
@@ -480,7 +407,9 @@ static int compare_tree_rows(const void *left, const void *right) {
 
 static ArcResult list_tree(const char *path, const ArcReadOptions *options) {
     Tree tree = {0};
+    Progress *progress = progress_start("Reading", path);
     ArcResult r = arc_list_ex(path, options, collect_tree, &tree);
+    progress_stop(progress);
     if (arc_ok(r) && tree.count) {
         qsort(tree.rows, tree.count, sizeof *tree.rows, compare_tree_rows);
         for (size_t i = 0; i < tree.count;) {
@@ -641,7 +570,9 @@ static int unpack(int count, char **args) {
                                  .path_count = selected_count,
                                  .password = password,
                                  .strip_root = strip_root};
+    Progress *progress = progress_start("Extracting", path);
     ArcResult r = arc_unpack_ex(path, destination, &options);
+    progress_stop(progress);
     if (!report_operation(r, "Cannot extract", path, destination))
         message(MESSAGE_SUCCESS, "Extracted to", " %s", destination);
     free(generated);
@@ -703,7 +634,9 @@ static int application(int argc, char **argv) {
                                 "Cannot list", path, NULL);
     if (!strcmp(command, "info")) {
         ArcInfo info;
+        Progress *progress = progress_start("Inspecting", path);
         ArcResult r = arc_inspect_ex(path, &options, &info);
+        progress_stop(progress);
         if (report_operation(r, "Cannot inspect", path, NULL))
             return 1;
         printf("Archive bytes: %" PRIu64 "\nContent bytes: %" PRIu64 "\nFiles: %" PRIu64
@@ -712,7 +645,9 @@ static int application(int argc, char **argv) {
                info.symbolic_link_count, info.hard_link_count);
         return ferror(stdout) ? 1 : 0;
     }
+    Progress *progress = progress_start("Verifying", path);
     ArcResult r = arc_verify_ex(path, &options);
+    progress_stop(progress);
     if (!report_operation(r, "Cannot verify", path, NULL))
         message(MESSAGE_SUCCESS, "Content readable", "; available integrity checks passed.");
     return r.code == ARC_OK ? 0 : 1;
