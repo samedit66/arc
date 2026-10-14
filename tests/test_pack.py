@@ -1,3 +1,4 @@
+from decimal import Decimal
 import os
 import stat
 from pathlib import Path
@@ -165,6 +166,32 @@ def test_hardlinks_in_tar(arc, tmp_path):
     assert "Hard links: 1" in arc("info", "hard.tar").stdout
     arc("unpack", "hard.tar", "output")
     assert os.path.samefile(tmp_path / "output/a", tmp_path / "output/b")
+
+
+@pytest.mark.parametrize("suffix", ["tar", "tar.gz", "tar.bz2", "tar.xz"])
+def test_tar_hardlinks_preserve_fractional_mtime(arc, tmp_path, suffix):
+    source = tmp_path / "source"
+    nested = source / ("d" * 80)
+    nested.mkdir(parents=True)
+    first, second = nested / ("a" * 50), nested / ("b" * 50)
+    first.write_bytes(b"shared")
+    os.link(first, second)
+    os.utime(first, ns=(1700000000123456700, 1700000000123456700))
+    timestamp = first.stat().st_mtime_ns
+    assert timestamp % 1_000_000_000, "test requires subsecond filesystem timestamps"
+    archive_path = tmp_path / f"hard.{suffix}"
+    arc("pack", archive_path, source)
+    with tarfile.open(archive_path) as archive:
+        files = [entry for entry in archive if not entry.isdir()]
+        assert len(files) == 2
+        assert sum(entry.islnk() for entry in files) == 1
+        # Decimal avoids losing nanoseconds through TarInfo's float mtime.
+        times = [Decimal(entry.pax_headers.get("mtime", str(entry.mtime))) for entry in files]
+        assert times == [Decimal(timestamp) / 1_000_000_000] * 2
+    arc("unpack", archive_path, "output")
+    restored = [tmp_path / "output" / path.relative_to(source) for path in (first, second)]
+    assert os.path.samefile(*restored)
+    assert all(path.read_bytes() == b"shared" for path in restored)
 
 
 def test_zip_refuses_multiple_hardlinks(arc, tmp_path):

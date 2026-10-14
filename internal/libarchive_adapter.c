@@ -58,7 +58,7 @@ typedef struct {
 } Format;
 
 static const Format formats[] = {
-    {"tar", archive_read_support_format_tar, archive_write_set_format_pax_restricted,
+    {"tar", archive_read_support_format_tar, archive_write_set_format_pax,
      ARC_CAN_WRITE_DIRECTORIES | ARC_CAN_WRITE_SYMBOLIC_LINKS | ARC_CAN_WRITE_HARD_LINKS |
          ARC_CAN_READ_DIRECTORIES | ARC_CAN_READ_SYMBOLIC_LINKS | ARC_CAN_READ_HARD_LINKS},
     {"zip", archive_read_support_format_zip, archive_write_set_format_zip,

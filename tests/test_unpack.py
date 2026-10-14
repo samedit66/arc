@@ -290,3 +290,16 @@ def test_windows_link_kind_does_not_use_existing_target(arc, make_tar, tmp_path)
     assert "Unknown Windows link target type" in result.stderr
     assert (output / "existing").read_bytes() == b"keep"
     assert not (output / "alias").is_symlink()
+
+
+@pytest.mark.parametrize("conflict", ["mode", "mtime"])
+def test_conflicting_hardlink_metadata_is_rejected(arc, make_tar, conflict):
+    target = file_entry("value", b"shared")
+    alias = link_entry("alias", "value", hard=True)
+    if conflict == "mode":
+        alias[0].mode = target[0].mode ^ 0o100
+    else:
+        alias[0].pax_headers["mtime"] = "0.123456789"
+    archive = make_tar([target, alias])
+    result = arc("unpack", archive, "output", success=False)
+    assert "Conflicting hard-link metadata" in result.stderr
