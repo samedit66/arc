@@ -1,3 +1,8 @@
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L
+#define _DARWIN_C_SOURCE
+#define _DEFAULT_SOURCE 1
+#endif
 #include "arc.h"
 #include "filekit/filekit.h"
 #include <archive.h>
