@@ -20,7 +20,8 @@ def run_script(root, name, *arguments, env=None):
 
 
 @pytest.mark.parametrize("move", ["source", "build", "alias"])
-def test_configure_recovers_after_directory_move(tmp_path, move):
+@pytest.mark.parametrize("sanitize", [False, True])
+def test_configure_recovers_after_directory_move(tmp_path, move, sanitize):
     root = tmp_path / "original checkout"
     scripts = root / "scripts"
     scripts.mkdir(parents=True)
@@ -30,12 +31,17 @@ def test_configure_recovers_after_directory_move(tmp_path, move):
     (root / "VERSION").write_text("0.1.0\n", newline="\n")
     (root / "CMakeLists.txt").write_text(
         'cmake_minimum_required(VERSION 3.21)\nproject(relocation LANGUAGES C)\n'
+        'option(ARC_SANITIZE "Enable sanitizers" OFF)\n'
         'file(WRITE "${CMAKE_BINARY_DIR}/configured-from" "${CMAKE_SOURCE_DIR}")\n',
         newline="\n",
     )
-    result = run_script(root, "configure.sh", env={"ARC_BUILD_DIR": "build/dev", "ARC_VERSION": "0.1.0"})
+    environment = {"ARC_BUILD_DIR": "build/dev", "ARC_VERSION": "0.1.0",
+                   "ARC_CMAKE_PRESET": "dev", "ARC_SANITIZE": "1" if sanitize else "0"}
+    result = run_script(root, "configure.sh", env=environment)
     assert result.returncode == 0, result.stdout + result.stderr
     build = root / "build/dev"
+    expected_mode = "ARC_SANITIZE:BOOL=" + ("ON" if sanitize else "OFF")
+    assert expected_mode in (build / "CMakeCache.txt").read_text()
     if move == "source":
         relocated = tmp_path / "renamed checkout"
         root.rename(relocated)
@@ -54,10 +60,11 @@ def test_configure_recovers_after_directory_move(tmp_path, move):
                 raise
             pytest.skip(f"Windows does not permit directory symlinks: {error}")
         build = alias
-    environment = {"ARC_BUILD_DIR": build.as_posix(), "ARC_VERSION": "0.1.0"}
+    environment["ARC_BUILD_DIR"] = build.as_posix()
     result = run_script(root, "configure.sh", env=environment)
     assert result.returncode == 0, result.stdout + result.stderr
     assert ("regenerating the CMake cache" in result.stdout) == (move != "alias")
+    assert expected_mode in (build / "CMakeCache.txt").read_text()
     assert (build / "configured-from").read_text().casefold() == root.as_posix().casefold()
     result = subprocess.run(
         ["cmake", "--build", build.as_posix()], capture_output=True, text=True, timeout=30,
