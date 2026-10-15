@@ -28,6 +28,11 @@ all five packages into a draft, and publishes only after uploads succeed.
 A rerun can resume a draft marked with the same checked commit; it does not
 modify an already-published release or an unrelated draft.
 
+For a new release, update `VERSION`, add `release/notes-X.Y.Z.md`, and push
+main plus an annotated `vX.Y.Z` tag after local checks. The notes' first line
+(`# Arc vX.Y.Z — Release name`) supplies the GitHub Release title; the rest
+becomes its body. Tags without a notes file retain GitHub-generated notes.
+
 To build a native distribution, install mise and platform tools:
 
 - Linux: GCC/build-essential, musl-tools, linux-libc-dev, pkg-config, Git, curl,

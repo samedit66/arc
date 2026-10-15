@@ -210,6 +210,16 @@ jobs:
           cd release-assets
           sha256sum arc-*.tar.gz arc-*.zip > SHA256SUMS
           marker="<!-- arc-release:$RELEASE_COMMIT -->"
+          title="$RELEASE_TAG"
+          notes_args=(--generate-notes --notes "$marker")
+          notes_file="$GITHUB_WORKSPACE/release/notes-${RELEASE_TAG#v}.md"
+          if [[ -f "$notes_file" ]]; then
+            title=$(sed -n '1s/^# //p' "$notes_file")
+            [[ -n "$title" ]] || { echo 'Release notes must start with a level-one title.' >&2; exit 1; }
+            prepared_notes="$RUNNER_TEMP/arc-release-notes.md"
+            { tail -n +2 "$notes_file"; printf '\n%s\n' "$marker"; } > "$prepared_notes"
+            notes_args=(--notes-file "$prepared_notes")
+          fi
           if state=$(gh release view "$RELEASE_TAG" --json isDraft,isPrerelease --jq '[.isDraft, .isPrerelease] | @tsv'); then
             if [[ "$state" == $'false\tfalse' ]]; then
               echo "Release $RELEASE_TAG is already published."
@@ -222,6 +232,6 @@ jobs:
             fi
             gh release upload "$RELEASE_TAG" arc-*.tar.gz arc-*.zip SHA256SUMS --clobber
           else
-            gh release create "$RELEASE_TAG" arc-*.tar.gz arc-*.zip SHA256SUMS --draft --verify-tag --generate-notes --notes "$marker" --title "$RELEASE_TAG"
+            gh release create "$RELEASE_TAG" arc-*.tar.gz arc-*.zip SHA256SUMS --draft --verify-tag "${notes_args[@]}" --title "$title"
           fi
-          gh release edit "$RELEASE_TAG" --draft=false
+          gh release edit "$RELEASE_TAG" --title "$title" --draft=false

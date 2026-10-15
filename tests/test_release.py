@@ -1,6 +1,11 @@
 from pathlib import Path
+import json
 import os
+import shlex
+import shutil
 import subprocess
+import sys
+import textwrap
 
 import pytest
 
@@ -98,6 +103,86 @@ def test_release_rejects_moved_tag(release_repo):
 def test_release_rejects_missing_tag(release_repo):
     repo, commit = release_repo
     assert validate(repo, "v0.1.0", commit).returncode != 0
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Publication job runs on Linux")
+@pytest.mark.parametrize("mode", ["generated", "curated", "invalid", "published", "unrelated", "resume"])
+def test_release_publication_title_and_draft_ownership(release_repo, mode):
+    repo, commit = release_repo
+    git(repo, "tag", "v0.1.0")
+    (repo / "scripts").mkdir()
+    shutil.copyfile(VALIDATOR, repo / "scripts/check-release-tag.sh")
+    assets = repo / "release-assets"
+    assets.mkdir()
+    for name in ("arc-test.tar.gz", "arc-test.zip"):
+        (assets / name).write_text("test package", newline="\n")
+    title = "Arc v0.1.0 — Named Release"
+    if mode != "generated":
+        (repo / "release").mkdir()
+        heading = title if mode == "invalid" else f"# {title}"
+        (repo / "release/notes-0.1.0.md").write_text(f"{heading}\n\nCurated notes.\n", newline="\n")
+    tools = repo / "tools"
+    tools.mkdir()
+    git_program = shutil.which("git")
+    assert git_program
+    # Keep tag/ancestry checks real; only the network fetch is suppressed.
+    (tools / "git").write_text(
+        '#!/bin/bash\nif [[ "$1" == fetch ]]; then exit 0; fi\n'
+        f'exec {shlex.quote(git_program)} "$@"\n', newline="\n")
+    (tools / "gh").write_text(f"#!{sys.executable}\n" + '''
+import json, os, sys
+from pathlib import Path
+args = sys.argv[1:]
+mode = os.environ["ARC_RELEASE_TEST_MODE"]
+record = {"args": args}
+if "--notes-file" in args:
+    record["body"] = Path(args[args.index("--notes-file") + 1]).read_text()
+with open(os.environ["ARC_RELEASE_TEST_LOG"], "a") as stream:
+    stream.write(json.dumps(record) + "\\n")
+if args[:2] == ["release", "view"]:
+    if mode not in ("published", "unrelated", "resume"):
+        sys.exit(1)
+    if "body" in args:
+        print("unrelated draft" if mode == "unrelated" else
+              "<!-- arc-release:" + os.environ["RELEASE_COMMIT"] + " -->")
+    else:
+        print("false\\tfalse" if mode == "published" else "true\\tfalse")
+''', newline="\n")
+    for tool in tools.iterdir():
+        tool.chmod(0o755)
+    log = repo / "gh.jsonl"
+    workflow = (VALIDATOR.parents[1] / ".github/workflows/ci.yml").read_text()
+    publish = textwrap.dedent(workflow.rsplit("        run: |\n", 1)[1])
+    result = subprocess.run(["bash", "-euo", "pipefail", "-c", publish], cwd=repo,
+                            text=True, capture_output=True, env={
+                                **os.environ, "PATH": f"{tools}{os.pathsep}{os.environ['PATH']}",
+                                "GITHUB_WORKSPACE": str(repo), "RUNNER_TEMP": str(repo),
+                                "RELEASE_TAG": "v0.1.0", "RELEASE_COMMIT": commit,
+                                "ARC_RELEASE_TEST_MODE": mode, "ARC_RELEASE_TEST_LOG": str(log),
+                            })
+    records = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+    mutations = [r for r in records if r["args"][:2] != ["release", "view"]]
+    if mode in ("invalid", "unrelated"):
+        assert result.returncode != 0
+        assert not mutations
+        return
+    assert result.returncode == 0, result.stderr
+    if mode == "published":
+        assert not mutations
+        return
+    expected_title = "v0.1.0" if mode == "generated" else title
+    edit = mutations[-1]["args"]
+    assert edit[:3] == ["release", "edit", "v0.1.0"]
+    assert edit[edit.index("--title") + 1] == expected_title
+    assert "--draft=false" in edit
+    first = mutations[0]
+    assert first["args"][1] == ("upload" if mode == "resume" else "create")
+    if mode == "curated":
+        assert first["args"][first["args"].index("--title") + 1] == title
+        assert first["body"] == f"\nCurated notes.\n\n<!-- arc-release:{commit} -->\n"
+    elif mode == "generated":
+        assert "--generate-notes" in first["args"]
+        assert first["args"][first["args"].index("--notes") + 1] == f"<!-- arc-release:{commit} -->"
 
 
 def test_musl_release_overrides_inherited_system_compiler(tmp_path):
