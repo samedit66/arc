@@ -53,12 +53,71 @@ def main() -> None:
     parser.add_argument("--zip-experiment", type=Path, help="render only the ZIP experiment summary")
     parser.add_argument("--tar-experiment", type=Path, help="render only the TAR experiment summary")
     parser.add_argument("--io-experiment", type=Path, help="render only the I/O experiment summary")
+    parser.add_argument("--compression-experiment", type=Path,
+                        help="render only compression time/size curves")
     parser.add_argument("--memory-experiment", type=Path,
                         default=Path("docs/benchmark-memory-results.csv"))
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 10,
                          "svg.fonttype": "none", "axes.titleweight": "bold"})
+    if args.compression_experiment:
+        with args.compression_experiment.open(newline="") as stream:
+            samples = list(csv.DictReader(stream))
+        figure, axes = plt.subplots(4, 2, figsize=(13, 12), layout="constrained")
+        figure.suptitle("Compression time vs archive size · 16 MiB inputs\n"
+                       "Lower left is better · independent logarithmic size scales", fontsize=16)
+        colors = {"zlib": "#2563eb", "ng": "#0ea5e9", "ouch": "#f59e0b"}
+        for row, dataset in enumerate(("repeated", "structured", "mixed", "random")):
+            for column, fmt in enumerate(("tar.gz", "zip")):
+                axis = axes[row, column]
+                panel = [r for r in samples if (r["dataset"], r["format"], r["kib"], r["experiment"])
+                         == (dataset, fmt, "16384", "single-thread")]
+                points = {}
+                for backend, level in {(r["backend"], r["level"]) for r in panel}:
+                    group = [r for r in panel if (r["backend"], r["level"]) == (backend, level)]
+                    points[backend, level] = (
+                        statistics.median(int(r["archive_bytes"]) / 1024 for r in group),
+                        statistics.median(float(r["seconds"]) * 1000 for r in group))
+                baseline = points["zlib", "default"]
+                axis.axvline(baseline[0] * 1.01, color="#64748b", linestyle=":", alpha=0.8)
+                for backend in ("zlib", "ng", "ouch"):
+                    levels = sorted((level for name, level in points if name == backend and level != "default"), key=int)
+                    values = [points[backend, level] for level in levels]
+                    if values:
+                        axis.plot([p[0] for p in values], [p[1] for p in values], "o-",
+                                  color=colors[backend], markersize=4,
+                                  label={"zlib": "Arc / zlib", "ng": "Arc / zlib-ng", "ouch": "ouch / 1 thread"}[backend])
+                    default = points[backend, "default"]
+                    axis.scatter(*default, marker="*", s=95, color=colors[backend], zorder=4)
+                labeled = []
+                for (backend, level), point in sorted(points.items()):
+                    if level == "default":
+                        continue
+                    if not any(other[0] <= point[0] and other[1] <= point[1] and other != point
+                               for other in points.values()):
+                        nearby = any(abs(other[0] / point[0] - 1) < 0.05 and
+                                     abs(other[1] - point[1]) < max(p[1] for p in points.values()) * 0.05
+                                     for other in labeled)
+                        axis.annotate(f"{backend}/{level}", point, xytext=(5, -14 if nearby else 6),
+                                      textcoords="offset points", fontsize=8)
+                        labeled.append(point)
+                axis.set_xscale("log")
+                axis.margins(x=0.18)
+                axis.set_ylim(0, max(point[1] for point in points.values()) * 1.2)
+                low, high = axis.get_xlim()
+                ticks = [low * (high / low) ** fraction for fraction in (0.1, 0.5, 0.9)]
+                axis.set_xticks(ticks, [f"{value:,.0f}" for value in ticks])
+                axis.xaxis.set_minor_locator(matplotlib.ticker.NullLocator())
+                axis.set_title(f"{dataset} / {fmt}")
+                axis.set_xlabel("archive KiB (log scale)")
+                axis.set_ylabel("packing ms")
+                axis.grid(alpha=0.18)
+                if row == column == 0:
+                    axis.legend(fontsize=8)
+        save_chart(figure, args.output, "compression-curves")
+        print(f"Compression curves saved in {args.output}.")
+        return
     if args.io_experiment:
         with args.io_experiment.open(newline="") as stream:
             samples = list(csv.DictReader(stream))

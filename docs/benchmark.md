@@ -25,6 +25,7 @@ large timezone-conversion cost and a compression speed/size trade-off.
 | ZIP and extraction memory | `b6221fb` → compact extraction metadata in `28545fb` | Memory change implemented; UTC and zlib-ng are experiments |
 | TAR packing | `28545fb` → timestamp cleanup and query reuse in `9022930` | Implemented |
 | I/O and traversal | `ea5a458` → 256 KiB extraction buffer and POSIX metadata reuse | Implemented; isolated candidate builds compared first |
+| Compression curves | `4ef9a82` with isolated adapter/backend builds | Research only; production defaults unchanged |
 
 The original tables describe their recorded builds, not the current release.
 Do not combine timings from different runs into one ranking.
@@ -298,6 +299,70 @@ Raw [candidates](benchmark-io-candidates.csv) / [parameters](benchmark-io-candid
 and [confirmation samples](benchmark-io-results.csv) / [parameters](benchmark-io-results.json)
 retain all cohorts. Commands: [build tooling](build.md#development-tools).
 
+### Compression at comparable output size
+
+![Compression time and size curves](assets/benchmark/compression-curves.svg)
+
+Each panel uses its own logarithmic size scale and linear time scale. Lower
+left is better; stars mark defaults, labels mark measured Pareto points.
+The dotted line is baseline Arc/zlib size +1%. Curves use seven samples,
+one compression worker for ouch, and Arc levels 0/3/6/9; ouch gzip also has
+level 1. ZIP levels are not passed into ouch 0.8.3's
+[ZIP writer](https://github.com/ouch-org/ouch/blob/0.8.3/src/archive/zip.rs),
+so it is shown only at default. Level numbers are not equivalent across backends.
+
+Within the +1% budget, selected 16 MiB TAR.GZ medians were:
+
+| Input | Candidate | Pack ms, baseline → candidate | Archive bytes, baseline → candidate |
+|---|---|---:|---:|
+| Repeated text | zlib-ng/9 | 31.40 → 17.92 | 58,470 → 57,637 |
+| Structured JSON logs | zlib-ng/6 | 132.82 → 79.75 | 2,644,080 → 2,644,794 |
+| Half text / half random | zlib-ng/3 | 114.24 → 69.96 | 8,478,447 → 8,504,020 |
+| Random | system zlib/0 | 233.01 → 12.81 | 16,782,515 → 16,780,475 |
+
+ZIP showed similar choices: repeated text 31.43 → 18.00 ms, logs
+134.63 → 83.39 ms, mixed 115.45 → 71.43 ms, random 231.76 → 11.19 ms.
+Level 0 means stored DEFLATE blocks for gzip and Store for ZIP. Already-gzipped
+random data behaved like random input. At 64 KiB, startup often outweighed
+the compression difference; Arc's 2,000-file cases showed no robust backend
+speed win within the default-size budget.
+A higher level is not always smaller: ng/9 logs were slower and larger than ng/6.
+
+Level tuning does not explain ouch's whole gzip lead. Its
+[gzip writer](https://github.com/ouch-org/ouch/blob/0.8.3/src/commands/compress.rs)
+uses parallel compression. An interleaved seven-sample control on the same
+16 MiB logs measured ouch default workers at 17.89 ms versus one worker at
+82.20 ms, both 2,685,941 bytes. On mixed input: 17.46 versus 76.91 ms,
+both 8,505,164 bytes. The one-worker comparison separates this effect from
+backend/level choices; parallel gzip remains a separate engineering direction.
+
+An illustrative offline rule kept defaults for multiple files or <1 MiB.
+For larger single files it used up to three 16 KiB samples (start/middle/end):
+compression ratio <.05 → ng/9, <.35 → ng/6, <.99 → ng/3, otherwise zlib/0.
+It met +1% size on all 32 sweep cases, but only 6/10 constructed holdout cases
+at a new 4 MiB size/seed. A random prefix hid repeated text (+15.6% output);
+random bytes at the sampled positions hid a compressible body (63× output).
+These are counterexamples, not estimates of real-world failure frequency.
+Sampling alone cannot enforce that size budget. Evaluation adds the separately
+measured Python sampling cost to packing medians, not an end-to-end adaptive
+implementation; switching backend binaries is also only a benchmark capability.
+ZIP compresses entries separately; gzip compresses the whole TAR stream.
+Unlike these fixtures, a streaming writer cannot know future additions.
+No automatic policy or production dependency/default change is adopted.
+
+The three-sample sweep uses 64 KiB / 1 MiB / 16 MiB repeated UTF-8, seeded JSON
+logs, alternating 32 KiB text/random, random, valid gzip-of-random payloads,
+and 2,000 small files. Seed 1729; compression fixture version 1 differs from
+the original fixture generator. Levels 0/1/3/6/9 plus defaults, zlib 1.2.12,
+isolated zlib-ng 2.3.3, libarchive 3.8.9, Clang 22.1.8. Subsequent cohorts:
+seven-sample large curves and thread control; three-sample 4 MiB holdout,
+seed 271828. All have one warm-up and seeded shuffled order, native timezone.
+All 3,024 warm-up/measured archives passed Arc filename/SHA-256 restoration
+checks outside packing time. Metadata/encryption are not benchmarked.
+All 2,388 timed samples and the offline rule evaluations are retained:
+[CSV](benchmark-compression-results.csv), [parameters and analysis](benchmark-compression-results.json).
+See [build tooling](build.md#development-tools) to reproduce; fixtures auto-delete.
+
 ## Methodology and reproduction
 
 Generated payloads and downloaded Rust copies are temporary and removed on
@@ -312,6 +377,7 @@ reproduce content, not timing or identical archives across platforms.
 | `bench-zip.py` | 1 warm-up, 7 runs, median | Shared ouch ZIP across environments | Timezone/backend isolation |
 | `bench-tar.py` | 1 warm-up, 5 runs, median | Warm-up validation only | Timestamp overhead and writer changes |
 | `bench-io.py` | 1 warm-up, 7/11/15 runs, median | Shared baseline archive | Isolated buffers, block reads and metadata reuse |
+| `bench-compression.py` | 1 warm-up, 3/7 runs, median | Untimed validation of every output | Time/size curves, worker control and offline policy counterexamples |
 
 Upstream ouch benchmark reviewed at
 `6df14b05ea6d1e600f1f3ff16bccd4a756c20c94`:

@@ -359,6 +359,48 @@ load path, renewed its signature and linked only the experimental executable
 to that copy. Its level-9 variant sets ZIP `compression-level=9` in an isolated
 adapter. These are diagnostics, not a supported distribution configuration.
 
+For compression curves, `scripts/bench-compression.c` is an experimental
+adapter replacement, compiled separately and linked before the native Release
+static library. It reads `ARC_BENCH_LEVEL` only in the probe executable;
+production Arc has no such switch. Use the compiler from the CMake cache:
+
+```sh
+ARC_CMAKE_PRESET=release mise run build
+# macOS Homebrew; omit this export when pkg-config already finds libarchive:
+export PKG_CONFIG_PATH="$(brew --prefix libarchive)/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+mkdir -p build/bench/compression
+bench_cc=$(sed -n 's/^CMAKE_C_COMPILER:FILEPATH=//p' build/release/CMakeCache.txt)
+"$bench_cc" -std=c11 -O3 -DNDEBUG -fPIC -D_FILE_OFFSET_BITS=64 -I. -Isrc -Isrc/internal $(pkg-config --cflags libarchive) -c scripts/bench-compression.c -o build/bench/compression/adapter.o
+"$bench_cc" build/release/CMakeFiles/arc_cli.dir/src/cli/*.o build/bench/compression/adapter.o build/release/libarc.a $(pkg-config --libs libarchive) -lpthread -o build/bench/compression/arc-zlib
+mise exec -- python scripts/bench-compression.py --backend zlib=build/bench/compression/arc-zlib --ouch /path/to/ouch
+```
+
+To include zlib-ng, relink the same objects against an isolated libarchive
+linked to zlib-ng, using the prototype setup above, and add
+`--backend ng=/path/to/arc-ng`. Verify its actual dependencies with `otool -L`
+on macOS or `ldd` on Linux. No probe or backend is added to production builds.
+Useful runner options:
+
+- `--datasets`, `--sizes-kib`, `--levels`, `--formats`, `--runs`, `--output`.
+- `--ouch-threads 1 --ouch-levels 1 3 6 9` for one-worker curves; ouch ZIP
+  ignores levels and is sampled at default only.
+- `--compare-ouch-threads --formats tar.gz --levels 0 --sizes-kib 16384 --runs 7`
+  interleaves ouch's default workers and one worker on identical bytes.
+- `--datasets structured mixed front-random front-text buried-text --sizes-kib 4096 --seed 271828 --levels 0 3 6 9 --evaluate-policy`
+  evaluates the illustrative offline rule and deliberate sampling counterexamples.
+  This requires backends named `zlib` and `ng`; results go to JSON. It is not a
+  runtime policy, and its sample cost is measured separately.
+
+CSV/JSON records levels, versions, binary hashes, fixture manifest hashes and
+sampling features/costs. Payloads and archives are temporary. The committed
+report combines cohorts using an `experiment` CSV column (`sweep`,
+`single-thread`, `threads`, `holdout`); retain each run's JSON parameters.
+Render its large-input, one-worker curves with:
+
+```sh
+python scripts/plot-bench.py --compression-experiment docs/benchmark-compression-results.csv
+```
+
 `mise run format` formats the C sources. `mise run check` builds the project,
 runs the CLI tests and checks C formatting; both formatting tasks require
 clang-format. See [the test guide](../tests/README.md) for focused runs,

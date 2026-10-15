@@ -75,9 +75,9 @@ def commands(tool: str, archive_format: str, source: Path, archive: Path,
             [executables["tar"], "-xf", str(archive), "-C", str(destination)])
 
 
-def timed_run(command: list[str], cwd: Path) -> float:
+def timed_run(command: list[str], cwd: Path, environment: dict[str, str] | None = None) -> float:
     started = time.perf_counter()
-    result = subprocess.run(command, cwd=cwd, capture_output=True, text=True)
+    result = subprocess.run(command, cwd=cwd, capture_output=True, text=True, env=environment)
     elapsed = time.perf_counter() - started
     if result.returncode:
         raise RuntimeError(f"Command failed: {command}\n{result.stderr}")
