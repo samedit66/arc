@@ -21,9 +21,10 @@ large timezone-conversion cost and a compression speed/size trade-off.
 
 | Snapshot | Arc baseline → measured change | Status |
 |---|---|---|
-| Synthetic and upstream Rust comparison | `9fa1f18` | Before both optimizations |
+| Synthetic and upstream Rust comparison | `9fa1f18` | Before subsequent optimizations |
 | ZIP and extraction memory | `b6221fb` → compact extraction metadata in `28545fb` | Memory change implemented; UTC and zlib-ng are experiments |
 | TAR packing | `28545fb` → timestamp cleanup and query reuse in `9022930` | Implemented |
+| I/O and traversal | `ea5a458` → 256 KiB extraction buffer and POSIX metadata reuse | Implemented; isolated candidate builds compared first |
 
 The original tables describe their recorded builds, not the current release.
 Do not combine timings from different runs into one ranking.
@@ -260,6 +261,43 @@ Measured packing outputs were not individually unpacked. Extraction here
 is validation, not another timing comparison. Raw data:
 [TAR samples](benchmark-tar-results.csv), [run metadata/PAX counts](benchmark-tar-results.json).
 
+### Buffer size and traversal metadata
+
+![I/O and traversal experiments](assets/benchmark/io-experiment.svg)
+
+All builds use Clang 22.1.8, Release, the same backend and native timezone.
+Candidates independently changed pack/unpack buffers to 256 KiB or 1 MiB,
+used block reading for packing, or reused POSIX traversal metadata. Eleven
+samples on 2,000 files and 64 MiB files showed no useful packing-buffer gain;
+1 MiB added little over 256 KiB. The block prototype gained only about 3%
+on large-file packing in that run, insufficient to justify extra sparse/offset
+handling. Only the 256 KiB extraction buffer and metadata reuse were retained.
+
+On 10,000 files (seven samples), TAR packing fell 397.02 → 375.78 ms (5.3%),
+TAR.GZ 465.75 → 432.10 ms (7.2%); ZIP's 1.4% gap was not meaningful.
+Small-file extraction and large-file packing showed no meaningful gain.
+A 15-sample extraction repeat on 128 MiB files, with a 500 ms pause after
+validation/cleanup outside timing, reduced text TAR from 62.51 to 55.33 ms
+(11.5%) and binary TAR from 61.91 to 52.31 ms (15.5%). The initial run
+without pauses showed larger median gaps (34.6% / 27.2%) and individual
+samples above 200 ms. The direction repeated, but filesystem/cache variation
+makes the percentage workload-dependent; it is not a fixed speed multiplier.
+
+Physical POSIX traversal supplies device/inode, type and size before metadata
+normalization; Windows and incomplete entries retain native inspection.
+Identity-based output exclusion and hard links remain intact. Packing keeps
+its 64 KiB buffer; extraction uses 192 KiB more fixed stack space per active
+entry. Archive byte counts matched before/after in every confirmation case.
+
+One warm-up per case, rotating tool order, seed 1729 / fixture version 1.
+The first build creates a shared extraction archive and reads every packed
+output; all warm-up and measured outputs passed filename/SHA-256 checks outside
+timing. No samples were dropped. The graph uses the 10,000-file run and the
+separate 128 MiB extraction repeat, not pooled timings from different cohorts.
+Raw [candidates](benchmark-io-candidates.csv) / [parameters](benchmark-io-candidates.json)
+and [confirmation samples](benchmark-io-results.csv) / [parameters](benchmark-io-results.json)
+retain all cohorts. Commands: [build tooling](build.md#development-tools).
+
 ## Methodology and reproduction
 
 Generated payloads and downloaded Rust copies are temporary and removed on
@@ -273,6 +311,7 @@ reproduce content, not timing or identical archives across platforms.
 | `bench-ouch.py` | 4 warm-ups, 10 runs, Hyperfine mean/deviation | Shared ouch archive | Pinned real source and reader comparison |
 | `bench-zip.py` | 1 warm-up, 7 runs, median | Shared ouch ZIP across environments | Timezone/backend isolation |
 | `bench-tar.py` | 1 warm-up, 5 runs, median | Warm-up validation only | Timestamp overhead and writer changes |
+| `bench-io.py` | 1 warm-up, 7/11/15 runs, median | Shared baseline archive | Isolated buffers, block reads and metadata reuse |
 
 Upstream ouch benchmark reviewed at
 `6df14b05ea6d1e600f1f3ff16bccd4a756c20c94`:
@@ -295,3 +334,8 @@ ASan/UBSan passed four C and 82 selected CLI tests. TAR changes passed four
 C and 308 CLI tests; ASan/UBSan passed four C and 108 selected CLI tests.
 Full suites had 26 Windows-only skips, sanitizer selections 12; formatting
 passed. Windows behavior was not executed on this host.
+
+I/O changes passed four C tests and 312 CLI tests (26 Windows-only skips);
+ASan/UBSan passed four C and 120 selected CLI tests (12 Windows-only skips).
+Added coverage includes sparse source round-trips, FIFO rejection and
+hard-link aliases of the output archive. Formatting passed.

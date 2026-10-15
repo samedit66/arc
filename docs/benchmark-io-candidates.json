@@ -1,0 +1,48 @@
+{
+  "seed": 1729,
+  "fixture_version": 1,
+  "runs": 11,
+  "warmups": 1,
+  "size_mib": 64,
+  "small_files": 2000,
+  "formats": [
+    "tar"
+  ],
+  "datasets": [
+    "small",
+    "text",
+    "binary"
+  ],
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "timezone": null,
+  "binaries": {
+    "before": "/Users/smd66/Projects/archiver/build/bench/io-experiment/before",
+    "buffer256": "/Users/smd66/Projects/archiver/build/bench/io-experiment/buffer-256",
+    "buffer1024": "/Users/smd66/Projects/archiver/build/bench/io-experiment/buffer-1024",
+    "blocks": "/Users/smd66/Projects/archiver/build/bench/io-experiment/blocks",
+    "metadata": "/Users/smd66/Projects/archiver/build/bench/io-experiment/metadata"
+  },
+  "versions": {
+    "before": "arc 0.2.0\n",
+    "buffer256": "arc 0.2.0\n",
+    "buffer1024": "arc 0.2.0\n",
+    "blocks": "arc 0.2.0\n",
+    "metadata": "arc 0.2.0\n"
+  },
+  "binary_sha256": {
+    "before": "475bb88b04f94e9d3e6f48ad3d421a8900c6735da8f1d1da6e14ffa984da2eb4",
+    "buffer256": "ee6650d0965f07223676e904b33a7f50f97eef83254137cd3d39365ec6187853",
+    "buffer1024": "8c8d852fee60c097f8fc933d47c1b10af8213859d2c97e26ca0472df272d4f20",
+    "blocks": "23a11fbcfbf76cbd86f5c589f343690cfcdba99761b4d641be448ee65e7f6103",
+    "metadata": "49ca324359ed2efe355f63b9616ffdad525237de2e3f45d6c44e8d4b624dd3b5"
+  },
+  "baseline_revision": "ea5a458",
+  "compiler": "Clang 22.1.8; -std=c11 -O3 -DNDEBUG -fPIC -D_FILE_OFFSET_BITS=64",
+  "backend": "libarchive 3.8.9, system zlib 1.2.12",
+  "candidate_changes": {
+    "buffer256": "256 KiB pack/unpack buffers",
+    "buffer1024": "1 MiB pack/unpack buffers",
+    "blocks": "block reader for packing; sparse gaps filled with zeros",
+    "metadata": "POSIX disk-entry metadata reuse; native fallback otherwise"
+  }
+}

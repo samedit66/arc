@@ -532,7 +532,7 @@ static ArcResult extract_entry(ExtractIndex *index, const char *root, struct arc
             r = ar_diagnostic(r, ARC_REASON_ENTRY_EXISTS, full);
         if (!ar_failed(r)) {
             p->created = 1;
-            unsigned char buffer[65536];
+            unsigned char buffer[262144];
             la_ssize_t n = 0;
             uint64_t total = 0;
             while ((n = archive_read_data(a, buffer, sizeof buffer)) > 0) {

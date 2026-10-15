@@ -225,6 +225,29 @@ ArcResult disk_open(struct archive *disk, const char *path) {
     return status == ARCHIVE_OK ? ar_okay() : backend_error(disk, ARC_IO_ERROR);
 }
 
+ArcResult disk_entry_info(struct archive_entry *e, const char *path, ArcFsInfo *out) {
+#ifndef _WIN32
+    unsigned type = archive_entry_filetype(e);
+    if (archive_entry_dev_is_set(e) && archive_entry_ino_is_set(e) &&
+        archive_entry_size_is_set(e) && archive_entry_size(e) >= 0 &&
+        (type == AE_IFREG || type == AE_IFDIR || type == AE_IFLNK)) {
+        ArcFsInfo info = {0};
+        info.exists = 1;
+        info.directory = type == AE_IFDIR;
+        info.symbolic = type == AE_IFLNK;
+        info.identity.key[0] = (uint64_t)archive_entry_dev(e);
+        info.identity.key[1] = (uint64_t)archive_entry_ino64(e);
+        info.mode = (unsigned)archive_entry_perm(e) & 0777;
+        info.size = (uint64_t)archive_entry_size(e);
+        *out = info;
+        return ar_okay();
+    }
+#else
+    (void)e;
+#endif
+    return ar_from_fs(arc_fs_info(path, out));
+}
+
 void clean_metadata(struct archive_entry *e) {
     archive_entry_set_perm(e, archive_entry_perm(e) & 0777);
     archive_entry_set_uid(e, 0);

@@ -458,7 +458,7 @@ static ArcResult add_source(ArcWriter *w, const char *source, const char *stored
             r = ar_result(ARC_INVALID_PATH, "Filesystem traversal escaped source '%s'.", prefix);
         ArcFsInfo current = {0};
         if (!ar_failed(r))
-            r = ar_from_fs(arc_fs_info(path, &current));
+            r = disk_entry_info(e, path, &current);
         int excluded = !ar_failed(r) && arc_fs_same_identity(current, w->output);
         if (!ar_failed(r) && !excluded && !(first && !*stored)) {
             r = ar_join(stored, suffix, &name);

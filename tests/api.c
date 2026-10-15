@@ -102,6 +102,13 @@ int main(void) {
     assert(strlen(result.path) < sizeof result.path);
     assert(arc_discard(&writer).code == ARC_OK);
 #ifndef _WIN32
+    assert(arc_create("pack-source/self.tar", &writer).code == ARC_OK);
+    assert(link("pack-source/self.tar", "pack-source/output-alias") == 0);
+    assert(arc_add_path(writer, "pack-source", "payload").code == ARC_OK);
+    assert(arc_close(&writer).code == ARC_OK);
+    ArcInfo self_info = {0};
+    assert(arc_inspect("pack-source/self.tar", &self_info).code == ARC_OK);
+    assert(self_info.file_count == 1 && self_info.hard_link_count == 0);
     assert(symlink("../outside", "external-alias") == 0);
     assert(arc_pack("external.tar", "external-alias").code == ARC_OK);
     assert(arc_unpack("external.tar", "external-out").code == ARC_OK);

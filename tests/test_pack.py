@@ -148,6 +148,34 @@ def test_output_inside_source_is_excluded(arc, source_tree):
         assert "self.tar" not in archive.getnames()
 
 
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX special file")
+def test_pack_rejects_special_files(arc, tmp_path):
+    source = tmp_path / "special"
+    source.mkdir()
+    os.mkfifo(source / "pipe")
+    result = arc("pack", "special.tar", source, success=False)
+    assert "Unsupported" in result.stderr
+    assert not (tmp_path / "special.tar").exists()
+
+
+@pytest.mark.parametrize("suffix", ["tar", "tar.gz", "zip"])
+def test_sparse_source_roundtrip(arc, tmp_path, suffix):
+    source = tmp_path / "source"
+    source.mkdir()
+    sparse = source / "sparse"
+    with sparse.open("wb") as stream:
+        stream.write(b"head")
+        stream.seek(1048579)
+        stream.write(b"tail")
+        stream.truncate(2097161)
+    os.utime(sparse, ns=(1700000000000000000, 1700000000000000000))
+    arc("pack", f"sparse.{suffix}", source)
+    arc("unpack", f"sparse.{suffix}", "restored")
+    restored = tmp_path / "restored/sparse"
+    assert restored.read_bytes() == sparse.read_bytes()
+    assert restored.stat().st_mtime_ns == sparse.stat().st_mtime_ns
+
+
 def test_unicode_under_c_locale(arc, source_tree, tmp_path):
     arc("pack", "locale.tar", source_tree, env={"LC_ALL": "C"})
     arc("unpack", "locale.tar", "output", env={"LC_ALL": "C"})

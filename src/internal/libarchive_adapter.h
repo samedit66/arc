@@ -2,6 +2,7 @@
 #define ARC_INTERNAL_LIBARCHIVE_ADAPTER_H
 
 #include "arc.h"
+#include "fs/fs.h"
 
 typedef struct {
     unsigned mode;
@@ -19,6 +20,9 @@ ArcEntryType entry_type(struct archive_entry *entry);
 void clean_metadata(struct archive_entry *entry);
 ArchiveMetadata backend_file_metadata(struct archive_entry *entry);
 ArcResult disk_open(struct archive *disk, const char *path);
+/* Physical disk-reader entry before writer metadata normalization. POSIX device/inode
+ * matches fs identity; other platforms or incomplete entries use native inspection. */
+ArcResult disk_entry_info(struct archive_entry *entry, const char *path, ArcFsInfo *out);
 ArcResult reader_open(const char *path, const char *password, struct archive **out);
 ArcResult read_header(struct archive *a, struct archive_entry **entry, int *end);
 ArcResult validate_password(const char *password);

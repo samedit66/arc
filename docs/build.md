@@ -325,6 +325,24 @@ selected Arc in native Release with the same backend. TAR's recorded baseline
 is `28545fb`; its intermediate build adds only timestamp cleanup to that
 revision. Generated TAR fixtures and optional source copies are temporary.
 
+For buffer/traversal comparisons, `bench-io.py` accepts named builds; the first
+build creates the shared extraction input and validates each packed archive.
+Every warm-up and measured output is checked outside the timer. It generates
+temporary fixtures and writes CSV/JSON with parameters and binary hashes:
+
+```sh
+mise exec -- python scripts/bench-io.py --binary before=/path/to/old/arc --binary after=/path/to/new/arc --size-mib 128 --datasets text binary --runs 15
+mise exec -- python scripts/bench-io.py --binary before=/path/to/old/arc --binary after=/path/to/new/arc --size-mib 128 --datasets text binary --operations unpack --pause-ms 500 --runs 15
+mise exec -- python scripts/bench-io.py --binary before=/path/to/old/arc --binary after=/path/to/new/arc --size-mib 1 --small-files 10000 --datasets small --formats tar tar.gz zip --runs 7
+python scripts/plot-bench.py --io-experiment docs/benchmark-io-results.csv
+```
+
+Use native Release builds with the same compiler and backend; the I/O baseline
+is `ea5a458`. The retained build changes only the extraction buffer to 256 KiB
+and reuses POSIX traversal metadata. Candidate measurements additionally tried
+256 KiB/1 MiB buffers in both directions and a temporary block-reader packing
+prototype with zero filling for sparse gaps; those prototypes are not shipped.
+
 The POSIX diagnostic probe uses the same libarchive as Arc:
 
 ```sh

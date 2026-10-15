@@ -52,12 +52,34 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=Path("docs/assets/benchmark"))
     parser.add_argument("--zip-experiment", type=Path, help="render only the ZIP experiment summary")
     parser.add_argument("--tar-experiment", type=Path, help="render only the TAR experiment summary")
+    parser.add_argument("--io-experiment", type=Path, help="render only the I/O experiment summary")
     parser.add_argument("--memory-experiment", type=Path,
                         default=Path("docs/benchmark-memory-results.csv"))
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 10,
                          "svg.fonttype": "none", "axes.titleweight": "bold"})
+    if args.io_experiment:
+        with args.io_experiment.open(newline="") as stream:
+            samples = list(csv.DictReader(stream))
+        figure, axes = plt.subplots(2, 2, figsize=(11, 7), layout="constrained")
+        figure.suptitle("I/O experiments · macOS ARM64\nBefore vs retained changes · median time", fontsize=16)
+        cases = (("small", "tar", "pack", "10,000 files / TAR packing"),
+                 ("small", "tar.gz", "pack", "10,000 files / TAR.GZ packing"),
+                 ("text", "tar", "unpack", "128 MiB text / TAR extraction"),
+                 ("binary", "tar", "unpack", "128 MiB binary / TAR extraction"))
+        for axis, (dataset, fmt, operation, title) in zip(axes.flat, cases):
+            tools = ("before", "after")
+            experiment = "many-files" if dataset == "small" else "large-repeat"
+            values = [statistics.median(float(row["seconds"]) * 1000 for row in samples
+                      if (row["dataset"], row["format"], row["operation"], row["tool"])
+                      == (dataset, fmt, operation, tool) and row["experiment"] == experiment)
+                      for tool in tools]
+            draw_bars(axis, ["Before", "After"], values, tools, "milliseconds")
+            axis.set_title(title)
+        save_chart(figure, args.output, "io-experiment")
+        print(f"I/O experiment summary saved in {args.output}.")
+        return
     if args.tar_experiment:
         with args.tar_experiment.open(newline="") as stream:
             samples = list(csv.DictReader(stream))
