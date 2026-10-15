@@ -44,6 +44,7 @@ CMake, Ninja, Python, uv and clang-format are pinned by mise for development too
 - Setup: `mise trust`, then `mise install`.
 - Configure when needed: `mise run configure`.
 - Build: `mise run build`.
+- Clean project builds and test caches: `mise run clean` (also removes local release dependencies).
 - Native static Release: `mise run release`.
 - Tested distribution: `mise run dist`.
 - Run: `mise run run -- --help`.

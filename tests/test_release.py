@@ -185,7 +185,8 @@ if args[:2] == ["release", "view"]:
         assert first["args"][first["args"].index("--notes") + 1] == f"<!-- arc-release:{commit} -->"
 
 
-def test_musl_release_overrides_inherited_system_compiler(tmp_path):
+@pytest.mark.parametrize("relocated", [False, True])
+def test_musl_release_overrides_inherited_system_compiler(tmp_path, relocated):
     root = VALIDATOR.parents[1]
     work = tmp_path / "build"
     vcpkg = work / "vcpkg"
@@ -200,6 +201,16 @@ def test_musl_release_overrides_inherited_system_compiler(tmp_path):
         path.chmod(0o755)
 
     script(tools / "git", "exit 0\n")
+    script(tools / "musl-gcc", "exit 0\n")
+    if relocated:
+        (work / "arc").mkdir()
+        (work / "arc/CMakeCache.txt").write_text(
+            "VCPKG_TARGET_TRIPLET:STRING=x64-linux-musl\n"
+            f"CMAKE_C_COMPILER:FILEPATH={(tools / 'musl-gcc').as_posix()}\n"
+            "CMAKE_HOME_DIRECTORY:INTERNAL=/old/checkout\n"
+            "CMAKE_CACHEFILE_DIR:INTERNAL=/old/checkout/build/arc\n",
+            newline="\n",
+        )
     script(vcpkg / "bootstrap-vcpkg.sh", "exit 0\n")
     script(vcpkg / "vcpkg", '[ "$CC" = musl-gcc ] || exit 7\n')
     script(tools / "cmake", '''
@@ -228,3 +239,4 @@ if [ "$1" = -hW ]; then printf '  Machine: Advanced Micro Devices X86-64\\n'; fi
     assert result.returncode == 0, result.stdout + result.stderr
     assert "VCPKG_CHAINLOAD_TOOLCHAIN_FILE=" in flags.read_text()
     assert "musl-toolchain.cmake" in flags.read_text()
+    assert ("--fresh" in flags.read_text()) == relocated

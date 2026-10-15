@@ -99,3 +99,9 @@ depends = ["release"]
 shell = "bash -euo pipefail -c"
 run = "bash scripts/test-release.sh && bash scripts/package-release.sh"
 dir = "{{config_root}}"
+
+[tasks.clean]
+description = "Remove project builds, local release dependencies and test caches"
+shell = "bash -euo pipefail -c"
+run = "bash scripts/clean.sh"
+dir = "{{config_root}}"

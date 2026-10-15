@@ -11,7 +11,7 @@ ROOT = Path(__file__).parents[1]
 @pytest.mark.parametrize("version", ["", "dev\n", "0.1.0\n0.2.0\n"])
 def test_invalid_version_stops_cmake_build(tmp_path, version):
     (tmp_path / "scripts").mkdir()
-    for name in ["build.sh", "build-env.sh", "configure.sh"]:
+    for name in ["build.sh", "build-env.sh", "configure.sh", "cmake-cache.sh"]:
         shutil.copyfile(ROOT / "scripts" / name, tmp_path / "scripts" / name)
     for name in ["CMakeLists.txt", "CMakePresets.json"]:
         shutil.copyfile(ROOT / name, tmp_path / name)

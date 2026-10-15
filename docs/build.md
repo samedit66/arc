@@ -67,6 +67,26 @@ The build/run/test shell helpers remain thin CMake/CTest/process wrappers.
 They contain no source compilation or compiler flags. Prefer mise, which
 provides the pinned tools; external consumers do not require it.
 
+## Cleaning and moving the checkout
+
+```sh
+mise run clean -- --help
+mise run clean
+```
+
+`clean` removes the checkout's `build/` tree (including downloaded vcpkg and
+installed release dependencies), `tests/.venv`, pytest/Python caches and legacy
+root binaries (`arc`, `arc.exe`, `arc.o`, `libarc.a`). Sources, checked-in fixtures,
+documentation and `.git` remain intact. External directories selected by
+`ARC_BUILD_DIR`, `ARC_RELEASE_BUILD_DIR` or `UV_PROJECT_ENVIRONMENT`, and global
+mise/uv/vcpkg caches are not removed. Do not run clean concurrently with builds.
+The next build or test recreates its local outputs and locked dependencies.
+
+After renaming or moving a checkout, the development and release wrappers detect
+outdated source/build paths and reconfigure CMake with `--fresh`. Existing release
+dependencies are retained. Recreate a moved Python environment with `mise run clean`
+or remove only `tests/.venv` before running tests: its launchers contain absolute paths.
+
 ## Release and distribution
 
 ```sh

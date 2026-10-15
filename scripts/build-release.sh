@@ -4,6 +4,7 @@ repo=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 cd "$repo"
 [[ $# -le 1 ]] || { echo 'Usage: bash scripts/build-release.sh [TARGET]' >&2; exit 1; }
 source scripts/release-env.sh
+source scripts/cmake-cache.sh
 mkdir -p "$work"
 pin=$(sed -n 's/.*"builtin-baseline": "\([0-9a-f]*\)".*/\1/p' release/vcpkg.json)
 vcpkg_root=$work/vcpkg
@@ -54,7 +55,10 @@ else
         cached_compiler=$(sed -n 's/^CMAKE_C_COMPILER:FILEPATH=//p; s/^CMAKE_C_COMPILER:STRING=//p' "$cache")
         [[ "${compiler%.exe}" == "${cached_compiler%.exe}" ]] || { echo 'Release compiler changed; use a separate ARC_RELEASE_BUILD_DIR.' >&2; exit 1; }
     fi
-    if [[ CMakePresets.json -nt "$cache" ]]; then
+    if cmake_cache_moved "$repo" "$work/arc"; then
+        echo 'Release directory moved; regenerating the CMake cache.'
+        cmake --fresh --preset release-vcpkg ${toolchain_flags[@]+"${toolchain_flags[@]}"}
+    elif [[ CMakePresets.json -nt "$cache" ]]; then
         cmake --preset release-vcpkg ${toolchain_flags[@]+"${toolchain_flags[@]}"}
     fi
 fi
