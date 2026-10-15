@@ -86,11 +86,54 @@ typedef struct {
 /** Nonzero exactly when result.code is ARC_OK. */
 int arc_ok(ArcResult result);
 
-/** Whole-operation packing options. NULL configuration infers the output suffix. */
+/** Progress is advisory: only the returned ArcResult determines success. */
+typedef enum { ARC_PHASE_PREPARING, ARC_PHASE_PROCESSING, ARC_PHASE_FINALIZING } ArcProgressPhase;
+
+/** Borrowed snapshot, valid only during the callback. No overall total is implied. */
 typedef struct {
-    const ArcOptions *configuration;
+    ArcProgressPhase phase;
+    /** Original archive entry path, or NULL when unavailable or between entries. */
+    const char *path;
+    /** Records encountered in this phase, including skipped/unselected records.
+     * Resets on a phase change; not a count of successfully completed files. */
+    uint64_t entries_seen;
+    /** Content bytes accepted by the pack backend, written by unpack, returned
+     * by reader_read, or read by verify. Skips and preflight add no bytes.
+     * Monotonic across phases; not compressed archive bytes or durable writes. */
+    uint64_t content_bytes;
+    uint64_t entry_bytes;
+    /** Ignore entry_size unless entry_size_known is nonzero. */
+    uint64_t entry_size;
+    int entry_size_known;
+} ArcProgress;
+
+/** Synchronous observation on the calling thread, within its temporary UTF-8
+ * locale scope. No background threads or maximum callback interval are promised.
+ * Copy snapshots/strings before retaining them. Do not reenter the active handle,
+ * change cwd, mutate the input/output files, or unwind across this C callback.
+ * Callbacks cannot cancel or report errors; finalization can fail after all data
+ * was processed. Slow callbacks delay the operation. */
+typedef void (*ArcProgressCallback)(const ArcProgress *progress, void *context);
+
+typedef struct {
+    /** NULL disables observation; context may be NULL. */
+    ArcProgressCallback callback;
+    void *context;
+} ArcObserver;
+
+/** Whole-operation packing options. Zero-initialize before setting fields.
+ * This replaces the former configuration pointer; rebuild and migrate clients. */
+typedef struct {
+    /** NULL infers format from the output suffix; empty strings are invalid. */
+    const char *format;
+    /** NULL uses suffix compression with inferred format, otherwise "none". */
+    const char *compression;
+    /** NULL for none; nonempty UTF-8 password requires ZIP AES-256. */
+    const char *password;
     /** Valid only for a single actual directory. */
     int keep_root;
+    /** Context is borrowed until arc_pack_ex returns. */
+    ArcObserver observer;
 } ArcPackOptions;
 
 /** Pack one filesystem source. A directory contributes its contents; a file or
@@ -102,7 +145,7 @@ ArcResult arc_pack(const char *archive_path, const char *source_path);
 /** Pack explicit sources; count must be positive. Multiple sources retain their
  * basenames. Does not follow symbolic links or consult ignore files. Sources
  * must remain unchanged; concurrent cwd/output replacement is unsupported.
- * NULL options uses defaults. Configuration, when supplied, ignores suffix.
+ * NULL options uses defaults. Explicit format/compression override suffix inference.
  * Source strings and options are borrowed only for the call. */
 ArcResult arc_pack_ex(const char *archive_path, const char *const *sources, size_t count,
                       const ArcPackOptions *options);
@@ -156,7 +199,7 @@ typedef struct {
 /** Root creation policy; neither mode permits file overwrites. */
 typedef enum { ARC_DESTINATION_NEW, ARC_DESTINATION_MERGE } ArcDestinationMode;
 
-/** Extended extraction configuration. */
+/** Whole-operation unpack options. Zero-initialize before setting fields. */
 typedef struct {
     ArcDestinationMode destination_mode;
     /** Borrowed UTF-8 relative archive paths; each includes its subtree. */
@@ -172,13 +215,19 @@ typedef struct {
      * Hard links escaping the stripped tree are rejected. Root metadata is omitted.
      * Requires a second metadata pass; compressed input may be decompressed twice. */
     int strip_root;
-} ArcExtractOptions;
+    /** Context is borrowed until arc_unpack_ex returns. */
+    ArcObserver observer;
+} ArcUnpackOptions;
 
-/** Password is copied by the backend during opening. Empty or invalid UTF-8
+/** Zero-initialize read options before setting fields.
+ * Password is copied by the backend during opening. Empty or invalid UTF-8
  * passwords are invalid. NULL means no password. Errors may occur during
  * reading; metadata enumeration and skipping need not decrypt content. */
 typedef struct {
     const char *password;
+    /** Copied into a sequential reader: context must survive until reader_close.
+     * For list/inspect/verify it is borrowed only until the operation returns. */
+    ArcObserver observer;
 } ArcReadOptions;
 
 /**
@@ -466,7 +515,7 @@ ArcResult arc_unpack(const char *archive_path, const char *destination);
  *
  * - `archive_path`: Non-NULL UTF-8 input path; input must remain unchanged.
  * - `destination`: Non-NULL UTF-8 directory path; parent must exist.
- * - `options`: Non-NULL configuration. Zero path_count extracts all entries.
+ * - `options`: NULL uses defaults (NEW destination); zero path_count extracts all entries.
  * Selectors are safe relative UTF-8 names; repeated/overlapping selectors
  * process each archive record once. Matching is byte-exact, case-sensitive
  * on every host, and includes descendants at '/' boundaries. Stored paths
@@ -485,7 +534,7 @@ ArcResult arc_unpack(const char *archive_path, const char *destination);
  * Example:
  * ```c
  * const char *paths[] = {"docs", "hello.txt"};
- * ArcExtractOptions options = {
+ * ArcUnpackOptions options = {
  *     .destination_mode = ARC_DESTINATION_NEW,
  *     .paths = paths,
  *     .path_count = sizeof paths / sizeof paths[0]
@@ -494,7 +543,7 @@ ArcResult arc_unpack(const char *archive_path, const char *destination);
  * ```
  */
 ArcResult arc_unpack_ex(const char *archive_path, const char *destination,
-                        const ArcExtractOptions *options);
+                        const ArcUnpackOptions *options);
 
 /**
  * Read every archive entry body to EOF without extracting it to disk.
@@ -558,10 +607,10 @@ ArcResult arc_list(const char *archive_path, ArcVisitor visitor, void *context);
 ArcResult arc_reader_open(const char *path, ArcReader **out);
 
 /**
- * Open a sequential reader with optional password credentials.
+ * Open a sequential reader with optional password credentials and progress observer.
  *
  * - `path`: Non-NULL UTF-8 input path; unchanged until close.
- * - `options`: Borrowed read configuration, or NULL for no password.
+ * - `options`: Borrowed read configuration, or NULL for no password/observer.
  * - `out`: Non-NULL owned output; set to NULL on failure; close after success.
  *
  * NULL options means no password. Existing operation contracts apply.
@@ -586,7 +635,7 @@ ArcResult arc_reader_open_ex(const char *path, const ArcReadOptions *options, Ar
  * Verify every entry body with optional password credentials.
  *
  * - `path`: Non-NULL UTF-8 input path; input must remain unchanged.
- * - `options`: Borrowed read configuration, or NULL for no password.
+ * - `options`: Borrowed read configuration, or NULL for no password/observer.
  *
  * NULL options means no password. Existing operation contracts apply.
  * Unsupported encryption returns UNSUPPORTED. Missing passwords return
@@ -606,7 +655,7 @@ ArcResult arc_verify_ex(const char *path, const ArcReadOptions *options);
  * Visit entry metadata with optional password credentials.
  *
  * - `path`: Non-NULL UTF-8 input path; input must remain unchanged.
- * - `options`: Borrowed read configuration, or NULL for no password.
+ * - `options`: Borrowed read configuration, or NULL for no password/observer.
  * - `visitor`: Non-NULL metadata callback; borrowed entries have callback lifetime.
  * - `context`: Caller-owned callback context; may be NULL.
  *
@@ -631,7 +680,7 @@ ArcResult arc_list_ex(const char *path, const ArcReadOptions *options, ArcVisito
  * Inspect archive sizes and counts with optional password credentials.
  *
  * - `path`: Non-NULL UTF-8 input path; input must remain unchanged.
- * - `options`: Borrowed read configuration, or NULL for no password.
+ * - `options`: Borrowed read configuration, or NULL for no password/observer.
  * - `info`: Non-NULL statistics output; unchanged on failure.
  *
  * NULL options means no password. Existing operation contracts apply.

@@ -410,6 +410,20 @@ sanitizers and fs module checks.
 
 Rebuild consumers together with the updated library: `ArcResult` has grown and
 `arc_unpack` now takes only archive and destination. Use `arc_unpack_ex` with
-`ArcExtractOptions` for merge mode, passwords, selection or root stripping;
-`ArcUnpackOptions` has been removed. `arc_pack` and `arc_pack_ex` own the complete
+`ArcUnpackOptions` for merge mode, passwords, selection or root stripping;
+`ArcExtractOptions` has been renamed to `ArcUnpackOptions`. `arc_pack` and `arc_pack_ex` own the complete
 writer lifecycle. See [the tutorial](tutorial.md#use-it-from-c).
+
+### Migrating progress and pack options
+
+Recompile the library and all consumers together: public option layouts have changed.
+Rename `ArcExtractOptions` to `ArcUnpackOptions`. In `ArcPackOptions`, replace the
+`configuration` pointer with direct `format`, `compression` and `password` fields.
+When copying an old explicit configuration, copy all three fields to retain its
+encoding. Omitted compression with an explicit format now means `"none"`; with an
+inferred format it follows the suffix. Zero-initialize all option structures.
+
+Pack, unpack and read options now accept an `ArcObserver`. Its context is borrowed
+until the operation returns, or until reader close for sequential readers. NULL
+unpack options use the same safe defaults as a zero initializer. See the tutorial
+for progress counters, phases and callback lifetime rules.

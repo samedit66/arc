@@ -2,6 +2,7 @@
 #define ARC_INTERNAL_ARC_INTERNAL_H
 
 #include "arc.h"
+#include "progress.h"
 ArcResult arc_get_capabilities_impl(const ArcOptions *options, unsigned *out);
 /**
  * Return the first retained writer failure. Public wrappers own the locale scope.
@@ -10,6 +11,7 @@ ArcResult arc_get_capabilities_impl(const ArcOptions *options, unsigned *out);
  */
 ArcResult writer_previous_failure(const ArcWriter *writer);
 ArcResult writer_failure(ArcWriter *writer, ArcResult r);
+void writer_observe(ArcWriter *writer, ProgressState *progress);
 ArcResult arc_finish_pack(ArcWriter **writer);
 ArcResult release_writer(ArcWriter **writer, int discard);
 ArcResult arc_create_impl(const char *path, const ArcOptions *options, ArcWriter **out);
@@ -23,7 +25,7 @@ ArcResult arc_list_impl(const char *path, const ArcReadOptions *options, ArcVisi
                         void *context);
 ArcResult arc_get_size_impl(const char *path, uint64_t *out);
 ArcResult arc_inspect_impl(const char *path, const ArcReadOptions *options, ArcInfo *out);
-ArcResult arc_unpack_impl(const char *path, const char *root, const ArcExtractOptions *options);
+ArcResult arc_unpack_impl(const char *path, const char *root, const ArcUnpackOptions *options);
 ArcResult arc_verify_impl(const char *path, const ArcReadOptions *options);
 
 ArcResult sequential_reader_ready(ArcReader *reader, int require_entry);

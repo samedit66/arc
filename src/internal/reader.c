@@ -15,6 +15,7 @@ struct ArcReader {
     int size_set;
     la_int64_t declared_size;
     ArcResult failure;
+    ProgressState progress;
 };
 
 ArcResult sequential_reader_ready(ArcReader *reader, int require_entry) {
@@ -46,11 +47,14 @@ ArcResult arc_reader_open_impl(const char *path, const ArcReadOptions *options, 
     ArcReader *reader = calloc(1, sizeof *reader);
     if (!reader)
         return ar_result(ARC_OUT_OF_MEMORY, "Cannot allocate reader.");
+    reader->progress.observer = options ? options->observer : (ArcObserver){0};
+    ar_progress_phase(&reader->progress, ARC_PHASE_PREPARING);
     ArcResult r = reader_open(path, options ? options->password : NULL, &reader->backend);
     if (ar_failed(r)) {
         free(reader);
         return r;
     }
+    ar_progress_phase(&reader->progress, ARC_PHASE_PROCESSING);
     *out = reader;
     return ar_okay();
 }
@@ -103,6 +107,9 @@ ArcResult arc_reader_next_impl(ArcReader *reader, ArcEntry *entry, int *end) {
     reader->entry = (ArcEntry){reader->name, type, known ? (uint64_t)reader->declared_size : 0,
                                known, reader->target};
     reader->has_entry = 1;
+    r = ar_progress_entry(&reader->progress, reader->name, reader->entry.size, known);
+    if (ar_failed(r))
+        return sequential_reader_failure(reader, r);
     *entry = reader->entry;
     *end = 0;
     return ar_okay();
@@ -134,6 +141,9 @@ ArcResult arc_reader_read_impl(ArcReader *reader, void *buffer, size_t capacity,
         r = ar_result(r.code, "Entry '%.65s': %.160s", reader->name, r.message);
         return sequential_reader_failure(reader, r);
     }
+    r = ar_progress_bytes(&reader->progress, (uint64_t)n);
+    if (ar_failed(r))
+        return sequential_reader_failure(reader, r);
     *received = (size_t)n;
     return ar_okay();
 }
@@ -143,6 +153,7 @@ ArcResult arc_reader_close_impl(ArcReader **owned) {
         return ar_okay();
     ArcReader *reader = *owned;
     *owned = NULL;
+    ar_progress_phase(&reader->progress, ARC_PHASE_FINALIZING);
     ArcResult cleanup = reader_release(reader->backend, ar_okay());
     ArcResult r = ar_failed(reader->failure) ? reader->failure : cleanup;
     clear_reader_entry(reader);
@@ -227,17 +238,24 @@ ArcResult arc_inspect_impl(const char *path, const ArcReadOptions *options, ArcI
 }
 
 ArcResult arc_verify_impl(const char *path, const ArcReadOptions *options) {
+    ProgressState progress = {.observer = options ? options->observer : (ArcObserver){0}};
+    ar_progress_phase(&progress, ARC_PHASE_PREPARING);
     struct archive *a = NULL;
     ArcResult r = reader_open(path, options ? options->password : NULL, &a);
     if (ar_failed(r))
         return r;
+    ar_progress_phase(&progress, ARC_PHASE_PROCESSING);
     while (!ar_failed(r)) {
         struct archive_entry *e = NULL;
         int end;
         r = read_header(a, &e, &end);
         if (ar_failed(r) || end)
             break;
-        r = ar_okay();
+        int known = archive_entry_size_is_set(e) && archive_entry_size(e) >= 0;
+        const char *name = progress.observer.callback ? archive_entry_pathname_utf8(e) : NULL;
+        if (name && !ar_valid_utf8(name))
+            name = NULL;
+        r = ar_progress_entry(&progress, name, known ? (uint64_t)archive_entry_size(e) : 0, known);
         uint64_t total = 0;
         unsigned char buffer[65536];
         while (!ar_failed(r)) {
@@ -253,6 +271,7 @@ ArcResult arc_verify_impl(const char *path, const ArcReadOptions *options) {
                 break;
             }
             total += (uint64_t)n;
+            r = ar_progress_bytes(&progress, (uint64_t)n);
         }
         if (!ar_failed(r) && entry_type(e) == ARC_ENTRY_FILE && archive_entry_size_is_set(e) &&
             (archive_entry_size(e) < 0 || total != (uint64_t)archive_entry_size(e)))
@@ -262,5 +281,6 @@ ArcResult arc_verify_impl(const char *path, const ArcReadOptions *options) {
             r = ar_result(r.code, "Entry '%.65s': %.160s", name ? name : "<unnamed>", r.message);
         }
     }
+    ar_progress_phase(&progress, ARC_PHASE_FINALIZING);
     return reader_release(a, r);
 }

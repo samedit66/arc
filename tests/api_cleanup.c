@@ -35,11 +35,23 @@ static ArcFsResult remove_output(const char *path) {
 #undef archive_write_close
 #undef arc_fs_remove_file
 
+static uint64_t observed_bytes;
+static int finalizing;
+
+static void observe(const ArcProgress *progress, void *context) {
+    (void)context;
+    observed_bytes = progress->content_bytes;
+    finalizing |= progress->phase == ARC_PHASE_FINALIZING;
+}
+
 int main(void) {
     FILE *source = fopen("source", "wb");
     assert(source && fputs("payload", source) >= 0 && fclose(source) == 0);
     fail_close = 1;
-    ArcResult result = arc_pack("finalize.tar", "source");
+    const char *source_path = "source";
+    ArcPackOptions options = {.observer = {observe, NULL}};
+    ArcResult result = arc_pack_ex("finalize.tar", &source_path, 1, &options);
+    assert(observed_bytes == 7 && finalizing);
     assert(result.code == ARC_IO_ERROR && !result.partial_output);
     assert(strstr(result.message, "Injected finalization"));
     assert(!fopen("finalize.tar", "rb"));

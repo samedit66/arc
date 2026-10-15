@@ -225,8 +225,12 @@ static ArcResult source_directory(const char *path, int *directory) {
 
 static int pack_sources(const char *output, const ArcOptions *options, int keep_root, int sources,
                         char **args) {
-    ArcPackOptions pack_options = {.configuration = options, .keep_root = keep_root};
     Progress *progress = progress_start("Creating", output);
+    ArcPackOptions pack_options = {.format = options->format,
+                                   .compression = options->compression,
+                                   .password = options->password,
+                                   .keep_root = keep_root,
+                                   .observer = progress_observer(progress)};
     ArcResult r = arc_pack_ex(output, (const char *const *)args, (size_t)sources, &pack_options);
     progress_stop(progress);
     if (report_operation(r, "Cannot create", output, NULL)) {
@@ -415,7 +419,9 @@ static int compare_tree_rows(const void *left, const void *right) {
 static ArcResult list_tree(const char *path, const ArcReadOptions *options) {
     Tree tree = {0};
     Progress *progress = progress_start("Reading", path);
-    ArcResult r = arc_list_ex(path, options, collect_tree, &tree);
+    ArcReadOptions reading = *options;
+    reading.observer = progress_observer(progress);
+    ArcResult r = arc_list_ex(path, &reading, collect_tree, &tree);
     progress_stop(progress);
     if (arc_ok(r) && tree.count) {
         qsort(tree.rows, tree.count, sizeof *tree.rows, compare_tree_rows);
@@ -571,13 +577,14 @@ static int unpack(int count, char **args) {
         return 1;
     }
     const char *destination = operands == 2 ? args[i + 1] : generated;
-    ArcExtractOptions options = {.destination_mode =
-                                     operands == 1 ? ARC_DESTINATION_NEW : ARC_DESTINATION_MERGE,
-                                 .paths = selected,
-                                 .path_count = selected_count,
-                                 .password = password,
-                                 .strip_root = strip_root};
+    ArcUnpackOptions options = {.destination_mode =
+                                    operands == 1 ? ARC_DESTINATION_NEW : ARC_DESTINATION_MERGE,
+                                .paths = selected,
+                                .path_count = selected_count,
+                                .password = password,
+                                .strip_root = strip_root};
     Progress *progress = progress_start("Extracting", path);
+    options.observer = progress_observer(progress);
     ArcResult r = arc_unpack_ex(path, destination, &options);
     progress_stop(progress);
     if (!report_operation(r, "Cannot extract", path, destination))
@@ -642,6 +649,7 @@ static int application(int argc, char **argv) {
     if (!strcmp(command, "info")) {
         ArcInfo info;
         Progress *progress = progress_start("Inspecting", path);
+        options.observer = progress_observer(progress);
         ArcResult r = arc_inspect_ex(path, &options, &info);
         progress_stop(progress);
         if (report_operation(r, "Cannot inspect", path, NULL))
@@ -653,6 +661,7 @@ static int application(int argc, char **argv) {
         return ferror(stdout) ? 1 : 0;
     }
     Progress *progress = progress_start("Verifying", path);
+    options.observer = progress_observer(progress);
     ArcResult r = arc_verify_ex(path, &options);
     progress_stop(progress);
     if (!report_operation(r, "Cannot verify", path, NULL))

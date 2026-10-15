@@ -10,6 +10,10 @@
 #include "arc.h"
 #endif
 
+static void observe(const ArcProgress *progress, void *context) {
+    *(unsigned *)context += progress->phase == ARC_PHASE_FINALIZING;
+}
+
 int main(void) {
 #ifdef _WIN32
     /* The real GDI declaration must remain available. */
@@ -32,5 +36,14 @@ int main(void) {
     if (result.code != ARC_ALREADY_EXISTS || result.reason != ARC_REASON_DESTINATION_EXISTS)
         return 4;
     result = arc_unpack("consumer.tar", "consumer.tar");
-    return result.code != ARC_ALREADY_EXISTS || result.partial_output;
+    if (result.code != ARC_ALREADY_EXISTS || result.partial_output)
+        return 5;
+    unsigned finalized = 0;
+    ArcReadOptions reading = {0};
+    reading.observer.callback = observe;
+    reading.observer.context = &finalized;
+    if (!arc_ok(arc_verify_ex("consumer.tar", &reading)) || finalized != 1)
+        return 6;
+    ArcUnpackOptions unpacking = {ARC_DESTINATION_NEW};
+    return arc_unpack_ex("consumer.tar", "consumer.tar", &unpacking).code != ARC_ALREADY_EXISTS;
 }

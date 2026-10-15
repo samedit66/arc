@@ -26,12 +26,13 @@ arc has one public header and private archive modules. The internal fs module ha
 | `arc.h` | Public types, declarations and contracts; standard C headers only. |
 | `src/arc.c` | Public operation wrappers, locale scopes, output publication and cleanup sequencing. |
 | `src/cli/output.{h,c}` | CLI messages and safe text display. |
-| `src/cli/progress.{h,c}` | CLI activity animation and its thread lifecycle. |
+| `src/cli/progress.{h,c}` | Synchronous CLI progress rendering and terminal lifecycle. |
 | `src/cli/main.c` | CLI parsing, automatic source/destination selection, tree display and diagnostics. |
 | `src/internal/pack.c` | Whole-operation packing, source basename/root mapping and writer ownership. |
 | `src/internal/arc_internal.h` | Private operation entry points; no writer representation. |
 | `src/internal/writer.c` | Writer state and ownership, chunks, filesystem traversal through libarchive, selected hard-link identity, close/discard. |
 | `src/internal/reader.c` | Sequential reader ownership/state, listing, statistics, file size and full-content verification. |
+| `src/internal/progress.{h,c}` | Borrowed observer state, phase changes and checked counters. |
 | `src/internal/unpack.c` | Selection and extraction state, directories, deferred links and metadata sequencing. |
 | `src/internal/libarchive_adapter.{h,c}` | Format/filter tables, configuration, reader lifecycle, entry conversion and backend error mapping. |
 | `src/internal/archive_paths.{h,c}` | Safe relative archive names, shared file/directory conflict rules and a typed AVL path index. |
@@ -42,6 +43,7 @@ arc has one public header and private archive modules. The internal fs module ha
 | `src/fs/support.c` | Module errors, strings and UTF-8 validation. |
 | `src/internal/platform_text.h` | Private locale scope, name comparison and platform path/text operations. |
 | `src/internal/platform_text_{unix,windows}.c` | Thread-local conversion contexts, archive name rules and bridges to fs Unicode conversion. |
+| `src/internal/progress.{h,c}` | Borrowed observer state, phase changes and checked counters. |
 | `src/internal/support.{h,c}` | Archive result construction, fs result translation, cleanup diagnostics, strings and a bridge to fs UTF-8 validation. |
 
 Dependency direction:
@@ -222,8 +224,11 @@ typedef enum {
 } ArcDestinationMode;
 
 typedef struct {
-    const ArcOptions *configuration;
+    const char *format;
+    const char *compression;
+    const char *password;
     int keep_root;
+    ArcObserver observer;
 } ArcPackOptions;
 
 /** Return OK to continue, or an error value to stop and propagate it. */
@@ -527,7 +532,7 @@ remain available. Sources are never inferred by the library.
 
 ### 8.1 Additive selection and verification API
 
-Selection uses `ArcExtractOptions`; verification can read content without extracting it:
+Selection uses `ArcUnpackOptions`; verification can read content without extracting it:
 
 ```c
 typedef struct {
@@ -536,10 +541,11 @@ typedef struct {
     size_t path_count;
     const char *password;
     int strip_root;
-} ArcExtractOptions;
+    ArcObserver observer;
+} ArcUnpackOptions;
 
 ArcResult arc_unpack_ex(const char *archive_path,
-    const char *destination, const ArcExtractOptions *options);
+    const char *destination, const ArcUnpackOptions *options);
 ArcResult arc_verify(const char *archive_path);
 ```
 
@@ -551,6 +557,7 @@ A positive count requires valid selectors; zero selects everything. Selectors ar
 typedef struct ArcReader ArcReader;
 typedef struct {
     const char *password;
+    ArcObserver observer;
 } ArcReadOptions;
 ArcResult arc_reader_open_ex(const char *path, const ArcReadOptions *options,
     ArcReader **out);
@@ -682,7 +689,7 @@ never be advertised as a guarantee of unbuffered streaming.
 
 ### 13.1 Selective extraction and content verification
 
-`arc_unpack_ex` accepts an `ArcExtractOptions` value with the destination mode and a borrowed array of UTF-8 archive paths. Each normalized selector matches its exact name and descendants at '/' component boundaries. Matching is byte-exact on every host. Empty selection extracts all; overlapping selectors do not process archive records twice. Stored paths and existing collision/metadata safety rules are preserved. Unselected directory metadata is not applied to implicit parents. Unmatched selectors return NOT_FOUND; absent/excluded hard-link targets return SELECTION_ERROR in selective mode. Dependencies are not silently extracted. Selected symlink targets may remain safely dangling under existing platform restrictions. Errors can leave partial output.
+`arc_unpack_ex` accepts an `ArcUnpackOptions` value with the destination mode and a borrowed array of UTF-8 archive paths. Each normalized selector matches its exact name and descendants at '/' component boundaries. Matching is byte-exact on every host. Empty selection extracts all; overlapping selectors do not process archive records twice. Stored paths and existing collision/metadata safety rules are preserved. Unselected directory metadata is not applied to implicit parents. Unmatched selectors return NOT_FOUND; absent/excluded hard-link targets return SELECTION_ERROR in selective mode. Dependencies are not silently extracted. Selected symlink targets may remain safely dangling under existing platform restrictions. Errors can leave partial output.
 
 `arc_verify` reads every entry body to EOF without extracting files, checks declared ordinary-file sizes where known and propagates all backend integrity warnings/errors. It does not require safe extraction names, unique paths, supported host object types or normalized CPIO alias groups. It does not establish authenticity or safe extraction. Plain TAR has no per-file content checksum; same-size payload changes may remain undetected. Skipping entries in list/inspect or selective unpack is not equivalent to verification.
 
@@ -705,7 +712,7 @@ Only nonempty ordinary-file contents are encrypted; names, metadata, symbolic-li
 targets, empty files and directories remain visible. Other output formats reject
 password-protected creation before creating output.
 
-`ArcReadOptions` and `ArcExtractOptions` accept a nonempty
+`ArcReadOptions` and `ArcUnpackOptions` accept a nonempty
 UTF-8 password; NULL means none. Empty or invalid UTF-8 passwords are rejected.
 Read options are used by `arc_reader_open_ex`, `arc_list_ex`, `arc_inspect_ex`
 and `arc_verify_ex`. Reading supports ZIP AES and ZipCrypto where available in
@@ -723,7 +730,7 @@ Interactive password entry and password callbacks are outside the API.
 - Compression-level selection, internal compression-method selection and compression-thread tuning.
 - Exact ownership, ACL, extended-attribute, security-descriptor or filesystem-flag restoration.
 - Public memory, pipe, network or user-callback I/O APIs.
-- Progress reporting and cancellation callbacks.
+- Cancellation callbacks (synchronous progress observation is supported).
 - Appending to or editing existing archives.
 - Creating RAR, CAB or LHA with the initial backend.
 - Multipart-volume handling.
@@ -788,7 +795,7 @@ arc unpack /tmp/ppa.tar.gz
 
 Without DESTINATION, use the archive basename minus its full recognized suffix as a directory in the current working directory; `/tmp/ppa.tar.gz` therefore extracts to `./ppa`. Naming recognizes the creation suffixes plus readable `.rar`, `.cab`, `.lha`, `.lzh`, `.cpio`, `.ar`, `.iso`, `.xar` and `.warc`. Match ASCII suffixes case-insensitively and choose the longest match. An unknown suffix appends `.extracted` to the whole basename. If stripping yields an empty, reserved or invalid component, try the whole basename plus `.extracted`; if that is invalid, require an explicit destination. Never silently choose a numbered directory.
 
-Automatic destination uses NEW mode, so an existing object causes an error. An explicit destination uses MERGE mode, creates a missing directory or reuses an actual existing directory, and never overwrites files or links. Existing directories keep their permissions and ownership; archive metadata is not applied to them. Creating children may naturally change their timestamps, which are not restored. Parent directories must exist. By default entry paths are preserved. Explicit `--strip-root` / `ArcExtractOptions.strip_root` removes exactly one common root after preflight. Input format is detected from content regardless of the filename.
+Automatic destination uses NEW mode, so an existing object causes an error. An explicit destination uses MERGE mode, creates a missing directory or reuses an actual existing directory, and never overwrites files or links. Existing directories keep their permissions and ownership; archive metadata is not applied to them. Creating children may naturally change their timestamps, which are not restored. Parent directories must exist. By default entry paths are preserved. Explicit `--strip-root` / `ArcUnpackOptions.strip_root` removes exactly one common root after preflight. Input format is detected from content regardless of the filename.
 
 ### 14.3 List, info and parsing
 
@@ -849,7 +856,7 @@ The CLI's directory-content policy is expressed explicitly at the library bounda
 result = arc_add_path(writer, "./ppa", "");
 
 /* An explicitly selected destination may merge actual directories only. */
-ArcExtractOptions merge = {.destination_mode = ARC_DESTINATION_MERGE};
+ArcUnpackOptions merge = {.destination_mode = ARC_DESTINATION_MERGE};
 result = arc_unpack_ex("ppa.zip", ".", &merge);
 ```
 
@@ -925,7 +932,7 @@ Evidence: [entry string getters](https://github.com/libarchive/libarchive/blob/m
 
 ```c
 const char *paths[] = {"docs", "images/logo.png"};
-ArcExtractOptions options = {ARC_DESTINATION_NEW, paths, 2};
+ArcUnpackOptions options = {ARC_DESTINATION_NEW, paths, 2};
 ArcResult extracted = arc_unpack_ex("project.zip", "selected", &options);
 ArcResult verified = arc_verify("project.zip");
 ```
@@ -962,8 +969,8 @@ The current public header is authoritative for all reader signatures and lifetim
 
 The everyday API changes are source/ABI incompatible with the original header:
 recompile all consumers. Replace three-argument `arc_unpack` with the two-argument
-helper for new destinations, or move options to `ArcExtractOptions` and call
-`arc_unpack_ex`. `ArcUnpackOptions` has been removed. Zero-initialize options and
+helper for new destinations, or move options to `ArcUnpackOptions` and call
+`arc_unpack_ex`. The former `ArcExtractOptions` is now named `ArcUnpackOptions`. Zero-initialize options and
 results (or use designated initializers in C); `ArcResult` now owns structured
 reason/path/partial-output/cleanup fields. `ArcReason` is declared in `arc.h`.
 Diagnostic paths are bounded to 1023 bytes plus NUL and marked when truncated;
@@ -976,3 +983,33 @@ not print. Emoji remain terminal-only; color still respects NO_COLOR.
 extraction. It synthesizes missing parent rows and keeps repeated archive records
 visible. It does not certify safe extraction and uses memory proportional to the
 collected paths and their parent prefixes.
+
+## Synchronous progress and option evolution
+
+`arc.h` defines the authoritative `ArcProgress`, callback and `ArcObserver` contracts.
+Pack, unpack and read options hold an observer by value. The internal ProgressState
+owns only counters and a borrowed context/path; it has no clock, formatting, thread
+or terminal dependency. A whole operation owns its state; sequential readers retain
+a copied observer until close. The private writer borrows the pack operation state.
+No public writer observer setter or generic event system is introduced.
+
+Preparing, processing and finalizing are ordered phases. Entries encountered are
+counted per phase, including skipped/unselected records. Content bytes accumulate
+across phases, excluding skips and strip-root preflight. Entry counters reset on
+phase transitions. Unknown entry sizes are explicit. Counter overflow fails with
+ARC_OVERFLOW rather than wrapping. Observer-free calls do not allocate paths or
+perform timing/formatting for progress. Verify retains its own raw backend loop,
+so observing it does not add sequential-reader CPIO normalization restrictions.
+
+The CLI renders callback snapshots on stderr after 200 ms, at most once per 100 ms,
+with escaped, width-limited entry paths and entries/content-byte counters. Redirected
+stderr and TERM=dumb stay quiet. There is no animation thread or Threads dependency;
+blocking backend work can leave the displayed snapshot unchanged. Finalization is
+advisory: the returned ArcResult remains the only success signal.
+
+ArcPackOptions is flat: NULL format infers encoding from the suffix; NULL compression
+uses suffix compression with inferred format, or none with explicit format. Explicit
+compression overrides either default. Empty identifiers are invalid. ArcOptions
+remains the explicit writer/capability configuration. ArcUnpackOptions replaces the
+name ArcExtractOptions; NULL unpack options are equivalent to its zero initializer.
+Rebuild consumers and replace the old pack configuration pointer with direct fields.

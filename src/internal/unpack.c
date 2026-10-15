@@ -45,7 +45,7 @@ static void free_selection(Selection *selection) {
     free(selection->items);
 }
 
-static ArcResult prepare_selection(const ArcExtractOptions *options, Selection *selection) {
+static ArcResult prepare_selection(const ArcUnpackOptions *options, Selection *selection) {
     if (!options->path_count)
         return ar_okay();
     if (!options->paths)
@@ -473,7 +473,7 @@ static ArcResult resolve_symbolic(ExtractIndex *index, ExtractItem *p) {
 #endif
 
 static ArcResult extract_entry(ExtractIndex *index, const char *root, struct archive *a,
-                               struct archive_entry *e) {
+                               struct archive_entry *e, ProgressState *progress) {
     ArcEntryType type = entry_type(e);
     if (type == ARC_ENTRY_OTHER)
         return ar_result(ARC_UNSUPPORTED, "Special archive entries are unsupported.");
@@ -542,6 +542,8 @@ static ArcResult extract_entry(ExtractIndex *index, const char *root, struct arc
                 }
                 total += (uint64_t)n;
                 r = ar_from_fs(arc_fs_write_all(fd, buffer, (size_t)n));
+                if (!ar_failed(r))
+                    r = ar_progress_bytes(progress, (uint64_t)n);
                 if (ar_failed(r))
                     break;
             }
@@ -562,7 +564,8 @@ static ArcResult extract_entry(ExtractIndex *index, const char *root, struct arc
 }
 
 /* Preflight all names, not only selected entries: stripping has one stable root. */
-static ArcResult strip_root_name(const char *path, const char *password, char **out) {
+static ArcResult strip_root_name(const char *path, const char *password, char **out,
+                                 ProgressState *progress) {
     struct archive *a = NULL;
     ArcResult r = reader_open(path, password, &a);
     char *common = NULL;
@@ -574,6 +577,8 @@ static ArcResult strip_root_name(const char *path, const char *password, char **
             break;
         char *raw = NULL, *name = NULL;
         r = entry_text(e, 0, &raw);
+        if (!ar_failed(r))
+            r = ar_progress_entry(progress, raw, 0, 0);
         int omitted = !ar_failed(r) && entry_type(e) == ARC_ENTRY_DIRECTORY &&
                       (!strcmp(raw, ".") || !strcmp(raw, "./"));
         if (!ar_failed(r) && !omitted)
@@ -644,16 +649,21 @@ static ArcResult strip_entry(struct archive_entry *e, const char *common, int *o
     return r;
 }
 
-ArcResult arc_unpack_impl(const char *path, const char *root, const ArcExtractOptions *options) {
-    if (!root || !*root || !options ||
+ArcResult arc_unpack_impl(const char *path, const char *root, const ArcUnpackOptions *options) {
+    const ArcUnpackOptions defaults = {0};
+    if (!options)
+        options = &defaults;
+    if (!root || !*root ||
         (options->destination_mode != ARC_DESTINATION_NEW &&
          options->destination_mode != ARC_DESTINATION_MERGE))
         return ar_result(ARC_INVALID_ARGUMENT, "Missing or invalid extraction options.");
+    ProgressState progress = {.observer = options->observer};
+    ar_progress_phase(&progress, ARC_PHASE_PREPARING);
     Selection selection = {0};
     ArcResult r = prepare_selection(options, &selection);
     char *common = NULL;
     if (!ar_failed(r) && options->strip_root)
-        r = strip_root_name(path, options->password, &common);
+        r = strip_root_name(path, options->password, &common, &progress);
     struct archive *a = NULL;
     if (!ar_failed(r))
         r = reader_open(path, options->password, &a);
@@ -677,14 +687,25 @@ ArcResult arc_unpack_impl(const char *path, const char *root, const ArcExtractOp
     if (!ar_failed(r))
         r = actual_directory(root);
     ExtractIndex index = {0};
+    ar_progress_phase(&progress, ARC_PHASE_PROCESSING);
     while (!ar_failed(r)) {
         struct archive_entry *e;
         int end;
         r = read_header(a, &e, &end);
         if (ar_failed(r) || end)
             break;
+        char *original = NULL;
+        if (progress.observer.callback) {
+            const char *name = archive_entry_pathname_utf8(e);
+            if (name && ar_valid_utf8(name))
+                r = ar_copy_string(name, &original);
+            int known = archive_entry_size_is_set(e) && archive_entry_size(e) >= 0;
+            if (!ar_failed(r))
+                r = ar_progress_entry(&progress, original,
+                                      known ? (uint64_t)archive_entry_size(e) : 0, known);
+        }
         int selected = 1;
-        if (selection.count) {
+        if (!ar_failed(r) && selection.count) {
             char *name = NULL;
             r = entry_text(e, 0, &name);
             if (!ar_failed(r))
@@ -697,10 +718,12 @@ ArcResult arc_unpack_impl(const char *path, const char *root, const ArcExtractOp
         if (!ar_failed(r) && selected && common)
             r = strip_entry(e, common, &omit);
         if (!ar_failed(r) && selected && !omit)
-            r = extract_entry(&index, root, a, e);
+            r = extract_entry(&index, root, a, e, &progress);
         if (!ar_failed(r) && archive_read_data_skip(a) != ARCHIVE_OK)
             r = backend_error(a, ARC_INVALID_ARCHIVE);
+        free(original);
     }
+    ar_progress_phase(&progress, ARC_PHASE_FINALIZING);
     r = reader_release(a, r);
     for (size_t i = 0; i < selection.count && !ar_failed(r); ++i)
         if (!selection.items[i].matched)

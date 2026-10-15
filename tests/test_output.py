@@ -187,8 +187,8 @@ def test_activity_frames_and_cleanup(arc_binary, tmp_path, utf8):
     frames = [frame for frame in output.split("\r\x1b[2K") if frame]
     assert len(frames) >= 2
     assert len(set(frames)) >= 2
-    assert all("Extracting: sample.tar" in frame for frame in frames)
-    assert ("⣿" if utf8 else "#") in output
+    assert all("Extracting:" in frame and "sample.tar" in frame for frame in frames)
+    assert all("entries" in frame and "MiB" in frame for frame in frames)
     assert output.endswith("\r\x1b[2K")
 
 
@@ -222,3 +222,19 @@ def test_activity_stays_within_terminal(arc_binary, tmp_path, columns):
     assert result.returncode == 0
     for frame in output.split("\r\x1b[2K"):
         assert len(frame) < columns
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX pseudoterminal test")
+@pytest.mark.parametrize("failure", [False, True])
+def test_progress_phases_and_error_cleanup(arc_binary, tmp_path, failure):
+    binary = arc_binary.with_name("arc_test_cli_progress")
+    arguments = ["sample.tar", "650", "phases"] + (["failure"] if failure else [])
+    result, output = terminal_run(binary, arguments, tmp_path, stream="stderr")
+    assert result.returncode == int(failure)
+    assert result.stdout == b""
+    frames = [frame for frame in output.split("\r\x1b[2K") if frame]
+    assert any(frame.startswith("Preparing:") for frame in frames)
+    assert any(frame.startswith("Extracting:") for frame in frames)
+    assert any(frame.startswith("Finalizing:") for frame in frames)
+    assert len(frames) <= 6  # The callback source emits every 25 ms; rendering is throttled.
+    assert output.endswith("\r\x1b[2K")

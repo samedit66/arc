@@ -5,6 +5,7 @@
 #endif
 #include "support.h"
 #include "arc_internal.h"
+#include "platform_text.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -51,6 +52,18 @@ ArcResult arc_pack(const char *path, const char *source) {
     return arc_pack_ex(path, &source, 1, NULL);
 }
 
+/* Pack otherwise enters locale scopes through the public writer operations. */
+static ArcResult pack_phase(ProgressState *progress, ArcProgressPhase phase) {
+    if (!progress->observer.callback)
+        return ar_okay();
+    LocaleScope scope;
+    ArcResult r = locale_begin(&scope);
+    if (ar_failed(r))
+        return r;
+    ar_progress_phase(progress, phase);
+    return locale_end(&scope, ar_okay());
+}
+
 ArcResult arc_pack_ex(const char *path, const char *const *sources, size_t count,
                       const ArcPackOptions *options) {
     if (!path || !*path || !sources || !count)
@@ -58,8 +71,23 @@ ArcResult arc_pack_ex(const char *path, const char *const *sources, size_t count
     int keep_root = options && options->keep_root;
     if (keep_root && count != 1)
         return ar_result(ARC_INVALID_ARGUMENT, "Keeping the root requires one directory.");
+    const ArchiveSuffix *suffix = ar_suffix_of(path, 1);
+    const char *format = options ? options->format : NULL;
+    const char *compression = options ? options->compression : NULL;
+    if ((format && !*format) || (compression && !*compression))
+        return ar_result(ARC_INVALID_ARGUMENT, "Empty archive encoding identifier.");
+    if (!format && !suffix)
+        return ar_result(ARC_INVALID_ARGUMENT, "Cannot infer output format; specify format.");
+    ArcOptions encoding = {format ? format : suffix->format,
+                           compression ? compression
+                           : format    ? "none"
+                                       : suffix->compression,
+                           options ? options->password : NULL};
+    ProgressState progress = {.observer = options ? options->observer : (ArcObserver){0}};
     ArcWriter *writer = NULL;
-    ArcResult r = ar_okay();
+    ArcResult r = pack_phase(&progress, ARC_PHASE_PREPARING);
+    if (!ar_failed(r))
+        r = pack_phase(&progress, ARC_PHASE_PROCESSING);
     for (size_t i = 0; i < count && !ar_failed(r); ++i) {
         if (!sources[i] || !*sources[i]) {
             r = ar_result(ARC_INVALID_ARGUMENT, "Missing source path.");
@@ -91,15 +119,17 @@ ArcResult arc_pack_ex(const char *path, const char *const *sources, size_t count
                 r = source_name(source, directory, &name);
         }
         if (!ar_failed(r) && !writer) {
-            r = options && options->configuration
-                    ? arc_create_ex(path, options->configuration, &writer)
-                    : arc_create(path, &writer);
+            r = arc_create_ex(path, &encoding, &writer);
+            if (!ar_failed(r))
+                writer_observe(writer, &progress);
         }
         if (!ar_failed(r))
             r = arc_add_path(writer, source, name);
         free(name);
         free(source);
     }
+    if (!ar_failed(r))
+        r = pack_phase(&progress, ARC_PHASE_FINALIZING);
     if (!ar_failed(r))
         return arc_finish_pack(&writer);
     if (writer)

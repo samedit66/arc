@@ -157,11 +157,11 @@ int arc_ok(ArcResult result) {
 }
 
 ArcResult arc_unpack(const char *path, const char *root) {
-    ArcExtractOptions options = {.destination_mode = ARC_DESTINATION_NEW};
+    ArcUnpackOptions options = {.destination_mode = ARC_DESTINATION_NEW};
     return arc_unpack_ex(path, root, &options);
 }
 
-ArcResult arc_unpack_ex(const char *path, const char *root, const ArcExtractOptions *o) {
+ArcResult arc_unpack_ex(const char *path, const char *root, const ArcUnpackOptions *o) {
     LocaleScope scope;
     ArcResult r = locale_begin(&scope);
     if (ar_failed(r))

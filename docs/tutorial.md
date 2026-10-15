@@ -137,14 +137,19 @@ ArcResult result = arc_pack_ex("project.zip", sources, 2, NULL);
 ```
 
 `ArcPackOptions.keep_root` requires one actual directory.
-`ArcPackOptions.configuration` optionally points to an `ArcOptions` value,
-which selects format/compression/password explicitly and ignores the suffix.
+`ArcPackOptions` directly accepts `format`, `compression`, `password` and
+`observer`. With no explicit format, the output suffix chooses it and the default
+outer compression. With an explicit format, omitted compression means `"none"`.
+An explicit compression always overrides its default. Empty identifiers are errors.
+For example, `ArcPackOptions options = {.password = "secret"};` is sufficient
+when packing to `backup.zip`. `ArcOptions` remains the explicit configuration
+for advanced writer creation and capability queries.
 
 For selected extraction and root stripping:
 
 ```c
 const char *paths[] = {"project/src"};
-ArcExtractOptions options = {
+ArcUnpackOptions options = {
     .destination_mode = ARC_DESTINATION_NEW,
     .paths = paths,
     .path_count = 1,
@@ -210,7 +215,7 @@ To extract everything, use `arc_unpack`; to select paths, use `arc_unpack_ex`. N
 Paths use UTF-8. Support for formats, compression and links depends on the backend build and the host. Use `arc_get_capabilities` to check a requested configuration. Unsupported features return an error rather than silently choosing something else.
 
 For password-protected ZIP creation, set `password` in `ArcOptions`. For
-extraction, use `ArcExtractOptions`. To verify encrypted
+extraction, use `ArcUnpackOptions`. To verify encrypted
 content without extracting it:
 
 ```c
@@ -230,8 +235,50 @@ Examples that require an existing writer, reader or callback state that prerequi
 ### Activity display
 
 Long-running `pack`, `unpack`, `verify`, `info`, and `list --tree` operations
-show an animated pixel activity bar with the archive path on terminal stderr.
-It appears after 200 ms and disappears before results or errors. It indicates
-activity, without estimating completion. Plain `list` prints entries directly.
-Redirected stderr and `TERM=dumb` disable the animation automatically; non-UTF-8
-terminals use ASCII. There is no flag or environment variable to silence output.
+show phase, encountered entry count, processed content size and current path on
+terminal stderr. The display appears after 200 ms, refreshes at most every 100 ms
+when callbacks arrive, and disappears before results or errors. Blocking backend
+calls can pause updates. Overall completion percentages are not estimated.
+Plain `list` prints entries directly. Redirected stderr and `TERM=dumb` disable
+progress automatically. Counters and phase labels use ASCII.
+
+### Observe progress
+
+Whole-operation options accept an optional synchronous observer:
+
+```c
+static void show_progress(const ArcProgress *progress, void *context) {
+    (void)context;
+    fprintf(stderr, "Phase %d: %llu records, %llu content bytes\n",
+            (int)progress->phase, (unsigned long long)progress->entries_seen,
+            (unsigned long long)progress->content_bytes);
+}
+
+/* Inside a caller function: */
+const char *sources[] = {"./backup"};
+ArcPackOptions options = {.observer = {show_progress, NULL}};
+ArcResult result = arc_pack_ex("backup.tar.gz", sources, 1, &options);
+```
+
+`ArcUnpackOptions` and `ArcReadOptions` accept the same observer. `arc_unpack_ex`
+also accepts NULL options for a new destination with default settings.
+
+Callbacks run on the calling thread. Snapshots and entry paths are borrowed for
+the callback only; copy them to retain or queue them to a UI thread. Do not reuse
+an active handle, change cwd or modify input/output files from a callback.
+A sequential reader copies its observer at opening; its context must remain alive
+until close. Other operations borrow context only until they return.
+
+The phases are preparing, processing and finalizing. `entries_seen` counts records
+encountered in the current phase, including unselected records; it resets on a
+phase change. `content_bytes` is cumulative and counts bytes accepted by the pack
+backend, written by unpack, returned by reader reads, or read by verify. It excludes
+skips and strip-root preflight; listing and inspection do not count declared sizes
+as bytes read. Hard-link aliases add no duplicate content when packing/unpacking.
+`entry_bytes` belongs to the current record; `entry_size` is usable only when
+`entry_size_known` is nonzero. Paths use original archive names before root stripping,
+or are NULL when unavailable or between entries.
+
+There is no overall percentage or callback timing guarantee: backend calls can
+block. Finalization may fail after all content was processed. Always check the
+returned result. Observers do not cancel operations or return errors.

@@ -111,7 +111,11 @@ int main(void) {
 
 `arc_unpack` requires a new destination. Use `arc_unpack_ex` for an existing
 directory, selected entries, a password or root stripping. Existing files and
-links are never overwritten. Writer/reader APIs remain available for generated
+links are never overwritten. `ArcPackOptions`, `ArcUnpackOptions` and `ArcReadOptions` accept optional synchronous
+progress observers for phases, entry counts and processed content bytes. The CLI
+uses these counters on terminals without a background animation thread.
+
+Writer/reader APIs remain available for generated
 text, binary chunks and incremental reading.
 
 See the [tutorial](docs/tutorial.md#use-it-from-c) for more examples and the

@@ -84,7 +84,7 @@ int main(void) {
     ArcPackOptions pack = {.keep_root = 1};
     const char *directory = "pack-source";
     assert(arc_pack_ex("root.tar", &directory, 1, &pack).code == ARC_OK);
-    ArcExtractOptions extract = {.destination_mode = ARC_DESTINATION_NEW, .strip_root = 1};
+    ArcUnpackOptions extract = {.destination_mode = ARC_DESTINATION_NEW, .strip_root = 1};
     assert(arc_unpack_ex("root.tar", "stripped", &extract).code == ARC_OK);
     file = fopen("stripped/data", "rb");
     assert(file && fread(buffer, 1, 4, file) == 4 && !memcmp(buffer, data, 4));

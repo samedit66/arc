@@ -38,7 +38,12 @@ struct ArcWriter {
     ArcFsInfo output;
     WriterIndex index;
     ArcResult failure;
+    ProgressState *progress;
 };
+
+void writer_observe(ArcWriter *writer, ProgressState *progress) {
+    writer->progress = progress;
+}
 
 static void free_index(WriterIndex *index) {
     for (size_t i = 0; i < index->count; ++i) {
@@ -242,7 +247,7 @@ static ArcResult start_entry(ArcWriter *w, struct archive_entry *entry, ArcEntry
         return writer_failure(w, backend_error(w->backend, ARC_IO_ERROR));
     w->entry_open = 1;
     w->remaining = type == ARC_ENTRY_FILE ? (uint64_t)archive_entry_size(entry) : 0;
-    return ar_okay();
+    return writer_failure(w, ar_progress_entry(w->progress, p->name, w->remaining, 1));
 }
 
 ArcResult arc_begin_file_impl(ArcWriter *w, const char *path, uint64_t size) {
@@ -288,6 +293,9 @@ ArcResult arc_write_chunk_impl(ArcWriter *w, const void *data, size_t n) {
             return writer_failure(w, backend_error(w->backend, ARC_IO_ERROR));
         p += done;
         left -= (size_t)done;
+        r = ar_progress_bytes(w->progress, (uint64_t)done);
+        if (ar_failed(r))
+            return writer_failure(w, r);
     }
     w->remaining -= n;
     return ar_okay();
