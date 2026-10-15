@@ -59,6 +59,15 @@ static ArcResult count_entry(const ArcEntry *entry, void *context) {
     return (ArcResult){.code = ARC_OK};
 }
 
+static ArcResult check_progress_entry(const ArcEntry *entry, void *context) {
+    const Observation *o = context;
+    assert(o->last.phase == ARC_PHASE_PROCESSING);
+    assert(o->last.entry_size_known == entry->size_known);
+    if (entry->size_known)
+        assert(o->last.entry_size == entry->size);
+    return (ArcResult){.code = ARC_OK};
+}
+
 static ArcResult stop_entry(const ArcEntry *entry, void *context) {
     (void)entry;
     (void)context;
@@ -157,9 +166,10 @@ static void reader_variants(void) {
         assert(arc_add_text(writer, "data", "hello").code == ARC_OK);
         assert(arc_close(&writer).code == ARC_OK);
         o = (Observation){0};
-        assert(arc_list_ex("stream.zip.gz", &reading, count_entry, &count).code == ARC_OK);
+        assert(arc_list_ex("stream.zip.gz", &reading, check_progress_entry, &o).code == ARC_OK);
         completed(&o, 0);
-        assert(o.unknown_size);
+        /* Backend versions may know ZIP sizes even through an outer filter. */
+        assert(o.seen[ARC_PHASE_PROCESSING] == 1);
         o = (Observation){0};
         assert(arc_verify_ex("stream.zip.gz", &reading).code == ARC_OK);
         completed(&o, 5);
@@ -285,6 +295,12 @@ int main(void) {
     state.snapshot.content_bytes = 0;
     state.snapshot.entry_bytes = UINT64_MAX;
     assert(ar_progress_bytes(&state, 1).code == ARC_OVERFLOW && !o.calls);
+    o = (Observation){0};
+    state = (ProgressState){.observer = observer(&o)};
+    ar_progress_phase(&state, ARC_PHASE_PROCESSING);
+    assert(ar_progress_entry(&state, "unknown", 0, 0).code == ARC_OK);
+    assert(ar_progress_bytes(&state, 5).code == ARC_OK);
+    assert(o.unknown_size && !o.last.entry_size_known && o.last.entry_bytes == 5);
     puts("Progress observation and packing defaults passed.");
     return 0;
 }

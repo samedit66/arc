@@ -110,7 +110,8 @@ transformation and collision safety. `test_tree.py` checks implicit parents,
 ordering, repeated records and escaped display names.
 
 Progress display tests use `arc_test_cli_progress` to emit controlled snapshots
-independently of archive processing speed. POSIX PTY checks cover counters, cleanup,
+with a substituted clock, without sleeping or depending on runner scheduling.
+POSIX PTY checks cover exact delay/throttle boundaries, phases, counters, cleanup,
 escaping, ASCII fallback, quick completion and redirected output. Windows console
 rendering requires a manual terminal check. `api_progress.c` checks whole-operation
 and reader observers, phase ordering, original strip-root paths, selection, hard-link

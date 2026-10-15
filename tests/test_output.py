@@ -236,5 +236,18 @@ def test_progress_phases_and_error_cleanup(arc_binary, tmp_path, failure):
     assert any(frame.startswith("Preparing:") for frame in frames)
     assert any(frame.startswith("Extracting:") for frame in frames)
     assert any(frame.startswith("Finalizing:") for frame in frames)
-    assert len(frames) <= 6  # The callback source emits every 25 ms; rendering is throttled.
+    assert len(frames) == 5  # Controlled clock: 200, 300, 400, 500 and 600 ms.
+    assert output.endswith("\r\x1b[2K")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX pseudoterminal test")
+def test_progress_delay_and_throttle_boundaries(arc_binary, tmp_path):
+    binary = arc_binary.with_name("arc_test_cli_progress")
+    result, output = terminal_run(binary, ["sample.tar", "0", "boundaries"], tmp_path,
+                                  stream="stderr")
+    assert result.returncode == 0
+    assert result.stdout == b""
+    frames = [frame for frame in output.split("\r\x1b[2K") if frame]
+    # Suppress 0/199 ms, repeated 200 ms, and updates 99 ms after the last render.
+    assert frames == [f"Extracting: {count} entries | 0.0 B | sample.tar" for count in (3, 6, 8)]
     assert output.endswith("\r\x1b[2K")
