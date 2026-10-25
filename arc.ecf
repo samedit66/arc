@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<system xmlns="http://www.eiffel.com/developers/xml/configuration-1-23-0"
+        name="arc" uuid="A43C1268-2712-4AD0-81EC-FE7A1ECAB291"
+        library_target="arc">
+    <target name="arc">
+        <root all_classes="true"/>
+        <capability>
+            <void_safety support="all" use="all"/>
+        </capability>
+        <library name="native" location="build/native/native.ecf"/>
+        <library name="free_elks" location="$GOBO/library/free_elks/library_ge.ecf">
+            <condition><custom name="GOBO_EIFFEL" value="ge"/></condition>
+        </library>
+        <library name="base" location="$ISE_LIBRARY/library/base/base.ecf">
+            <condition><custom name="GOBO_EIFFEL" excluded_value="ge"/></condition>
+        </library>
+        <external_include location="$ECF_CONFIG_PATH/src/core/c"/>
+        <cluster name="core" location="src/core" recursive="false">
+            <cluster name="pack" location="src/core/pack" recursive="false"/>
+            <cluster name="read" location="src/core/read" recursive="false"/>
+            <cluster name="unpack" location="src/core/unpack" recursive="false"/>
+        </cluster>
+    </target>
+    <target name="cli" extends="arc">
+        <root class="ARC_CLI" feature="make"/>
+        <setting name="console_application" value="true"/>
+        <setting name="executable_name" value="arc"/>
+        <library name="cli_library" location="vendor/cli/cli.ecf"/>
+        <cluster name="cli" location="src/cli" recursive="false"/>
+    </target>
+</system>

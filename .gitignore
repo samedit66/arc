@@ -1,0 +1,41 @@
+# EiffelStudio and Gobo generated build directories, at any project depth.
+EIFGENs/
+.gobo/
+
+# Native dependencies, Conan cache, package staging and release ZIPs.
+/build/
+
+# Executables produced by the current application and linkage test targets.
+/arc
+/arc.exe
+/linkage_check
+/linkage_check.exe
+
+# Python bytecode and local virtual environments.
+__pycache__/
+*.py[cod]
+.venv/
+
+# Personal mise overrides; keep mise.toml and Conan profiles under version control.
+mise.local.toml
+.mise.local.toml
+
+# Operating-system metadata.
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Extraction integration probe.
+/unpack_probe
+/unpack_probe.exe
+
+/unpack_options_probe
+/unpack_options_probe.exe
+
+# Packing integration probe.
+/pack_probe
+/pack_probe.exe
+
+# Sequential reading integration probe.
+/read_probe
+/read_probe.exe

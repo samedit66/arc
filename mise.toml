@@ -1,0 +1,22 @@
+[tools]
+python = "3.13.15"
+"pipx:conan" = "2.33.0"
+
+[env]
+CONAN_HOME = "{{ config_root }}/build/conan"
+
+[tasks.prepare]
+description = "Detect the native toolchain, deploy static dependencies and generate ECF"
+run = "python scripts/prepare.py"
+
+[tasks.package]
+description = "Package Eiffel source, native dependencies, licenses and target metadata"
+run = "python scripts/package.py"
+
+[tasks.test]
+description = "Check cross-platform dependency metadata and package contracts"
+run = "python -m unittest discover -s tests -p 'test_*.py'"
+
+[tasks.test-cli]
+description = "Check explicitly supplied CLI executables and unpack behavior"
+run = "python tests/check_cli.py"

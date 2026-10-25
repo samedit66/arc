@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<system xmlns="http://www.eiffel.com/developers/xml/configuration-1-23-0"
+        name="cli" uuid="8C774AEC-1339-4F76-9696-011141E277C7" library_target="cli">
+    <target name="cli">
+        <root all_classes="true"/>
+        <option>
+            <assertions precondition="true" supplier_precondition="true"/>
+        </option>
+        <capability>
+            <void_safety support="all" use="all"/>
+        </capability>
+        <library name="gobo_free_elks" location="${GOBO}/library/free_elks/library_${GOBO_EIFFEL}.ecf">
+            <condition><custom name="GOBO_EIFFEL" value="ge"/></condition>
+        </library>
+        <library name="ise_base" location="$ISE_LIBRARY/library/base/base.ecf">
+            <condition><custom name="GOBO_EIFFEL" excluded_value="ge"/></condition>
+        </library>
+        <cluster name="cli" location="src" recursive="false"/>
+    </target>
+</system>

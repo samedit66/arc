@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<system xmlns="http://www.eiffel.com/developers/xml/configuration-1-23-0"
+        name="linkage_check" uuid="E2E955DE-6870-4FDC-9119-7F7556F03A0C">
+    <target name="linkage">
+        <root class="ARC_CLI" feature="make"/>
+        <setting name="console_application" value="true"/>
+        <setting name="executable_name" value="linkage_check"/>
+        <capability>
+            <void_safety support="all" use="all"/>
+        </capability>
+        <!-- macOS-only link probe: force reader, writer, compression and ZIP crypto code. -->
+        <external_linker_flag value="-Wl,-u,_archive_read_new"/>
+        <external_linker_flag value="-Wl,-u,_archive_read_support_filter_all"/>
+        <external_linker_flag value="-Wl,-u,_archive_read_support_format_all"/>
+        <external_linker_flag value="-Wl,-u,_archive_write_new"/>
+        <external_linker_flag value="-Wl,-u,_archive_write_set_format_zip"/>
+        <library name="free_elks" location="$GOBO/library/free_elks/library_ge.ecf">
+            <condition><custom name="GOBO_EIFFEL" value="ge"/></condition>
+        </library>
+        <library name="base" location="$ISE_LIBRARY/library/base/base.ecf">
+            <condition><custom name="GOBO_EIFFEL" excluded_value="ge"/></condition>
+        </library>
+        <library name="arc" location="../arc.ecf"/>
+        <library name="cli_library" location="../vendor/cli/cli.ecf"/>
+        <cluster name="cli" location="../src/cli" recursive="false"/>
+    </target>
+</system>
