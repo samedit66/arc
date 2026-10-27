@@ -427,7 +427,7 @@ static int libarchive_wrapper_extract_block(struct archive *reader,
 }
 /**
  * Create an owned binary descriptor exclusively, without truncating any existing
- * file or symlink. Return the descriptor or -1 and capture errno separately.
+ * file or symlink. Return the descriptor or -1 and capture the system error separately.
  * Ownership, finalization and removal policy belong to Eiffel.
  */
 static int libarchive_wrapper_create_output(const void *path, int32_t *error_code)
@@ -435,6 +435,20 @@ static int libarchive_wrapper_create_output(const void *path, int32_t *error_cod
     int fd;
     *error_code = 0;
 #ifdef _WIN32
+    /* The CRT can follow a dangling symlink despite _O_EXCL. Reject the link itself. */
+    DWORD attributes = GetFileAttributesW((const wchar_t *)path);
+    if (attributes != INVALID_FILE_ATTRIBUTES) {
+        if (attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+            *error_code = EEXIST;
+            return -1;
+        }
+    } else {
+        DWORD code = GetLastError();
+        if (code != ERROR_FILE_NOT_FOUND && code != ERROR_PATH_NOT_FOUND) {
+            *error_code = libarchive_wrapper_windows_code(code);
+            return -1;
+        }
+    }
     fd = _wopen((const wchar_t *)path, _O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY | _O_NOINHERIT,
         _S_IREAD | _S_IWRITE);
 #else

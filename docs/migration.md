@@ -155,3 +155,7 @@ The CI matrix builds and runs the current probes and CLI checks with Gobo and
 EiffelStudio on Ubuntu, macOS ARM64 and Windows/MSVC. ZIP creation explicitly
 selects UTF-8 header names inside the scoped UTF-8 locale, avoiding Windows’
 CP437 default. No caller API changes are required.
+
+Windows output creation explicitly rejects existing reparse points before calling
+the CRT, including dangling symlinks that `_wopen` can otherwise follow despite
+exclusive creation. Rejected output paths never become owned cleanup targets.

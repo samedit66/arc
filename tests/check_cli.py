@@ -165,6 +165,7 @@ def check_extraction_policy(executable):
         source.write_bytes(b"data")
         run(executable, root, "pack", "occupied.zip", source, ok=False)
         assert os.readlink(root / "occupied.zip") == "missing"
+        assert not (root / "missing").exists()
 
 
 def check_inspection_and_passwords(executable):
