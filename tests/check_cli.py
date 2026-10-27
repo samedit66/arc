@@ -17,7 +17,7 @@ PROFILES = ("tar", "tar.gz", "tar.bz2", "tar.xz", "tar.zst", "tar.lz4", "zip", "
 def run(executable, root, *arguments, ok=True):
     """Run one CLI command and require the selected success/failure outcome."""
     result = subprocess.run([str(executable), *map(str, arguments)], cwd=root,
-                            capture_output=True, text=True, timeout=30,
+                            capture_output=True, text=True, encoding="utf-8", timeout=30,
                             env=dict(os.environ, LC_ALL="C", LANG="C"))
     assert (result.returncode == 0) == ok, (arguments, result)
     if not ok:
@@ -68,7 +68,7 @@ def check_pack_and_unpack(executable):
         (source / "data.txt").write_bytes(b"payload")
         (source / "nested/large.txt").write_bytes(b"x" * 200000)
         (source / "nested/empty.txt").write_bytes(b"")
-        (source / "link").symlink_to("nested")
+        (source / "link").symlink_to("nested", target_is_directory=True)
         (source / "dangling").symlink_to("absent-🙂.txt")
         for profile in PROFILES:
             archive = root / ("roundtrip." + profile)
@@ -243,6 +243,36 @@ def check_inspection_and_passwords(executable):
         run(executable, root, "unpack", linked, ok=False)
 
 
+def check_windows_policy(executable):
+    """Exercise Windows name rejection and junction non-traversal on a real Windows host."""
+    if os.name != "nt":
+        return
+    with tempfile.TemporaryDirectory(prefix="arc-windows-") as temporary:
+        root = Path(temporary).resolve()
+        unsafe = (r"dir\..\escape", "C:escape", r"\escape", r"\\server\share\escape",
+                  r"\\?\C:\escape", "nul.txt", "file:stream", "trailing.", "trailing ", "bad?.txt")
+        for index, name in enumerate(unsafe):
+            archive = root / f"invalid-{index}.zip"
+            with zipfile.ZipFile(archive, "w") as output:
+                output.writestr(name, b"bad")
+            run(executable, root, "list", archive)
+            run(executable, root, "unpack", archive, ok=False)
+            assert not (root / "escape").exists()
+        target = root / "target"
+        target.mkdir()
+        (target / "file").write_bytes(b"must not traverse")
+        junction = root / "junction"
+        result = subprocess.run(["cmd", "/c", "mklink", "/J", str(junction), str(target)],
+                                capture_output=True, timeout=30)
+        assert result.returncode == 0, result.stderr
+        try:
+            output = root / "junction.zip"
+            run(executable, root, "pack", output, junction, ok=False)
+            assert not output.exists() and (target / "file").read_bytes() == b"must not traverse"
+        finally:
+            junction.rmdir()
+
+
 def main(arguments):
     """Check each supplied executable without using stale or implicitly discovered binaries."""
     if not arguments:
@@ -261,6 +291,7 @@ def main(arguments):
         check_pack_and_unpack(executable)
         check_extraction_policy(executable)
         check_inspection_and_passwords(executable)
+        check_windows_policy(executable)
         print(f"PASS: {executable}: CLI profiles, traversal, links, output ownership, listing, inspection, verification and passwords")
 
 

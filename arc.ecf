@@ -7,18 +7,93 @@
         <capability>
             <void_safety support="all" use="all"/>
         </capability>
-        <library name="native" location="build/native/native.ecf"/>
+        <variable name="ARC_NATIVE_MODE" value="system"/>
+        <variable name="ARC_SYSTEM_CRT" value="default"/>
+        <variable name="ARC_SYSTEM_STATIC" value="false"/>
+        <variable name="ARC_LIBC" value="glibc"/>
+        <library name="native" location="build/native/native.ecf">
+            <condition><custom name="ARC_NATIVE_MODE" value="conan"/></condition>
+        </library>
+        <external_include location="${ARC_LIBARCHIVE_PREFIX}/include">
+            <condition>
+                <custom name="ARC_NATIVE_MODE" value="^(system)?$" match="regexp"/>
+                <custom name="ARC_LIBARCHIVE_PREFIX" value=".+" match="regexp"/>
+            </condition>
+        </external_include>
+        <external_linker_flag value='-L"${ARC_LIBARCHIVE_PREFIX}/lib"'>
+            <condition>
+                <platform excluded_value="windows"/>
+                <custom name="ARC_NATIVE_MODE" value="^(system)?$" match="regexp"/>
+                <custom name="ARC_LIBARCHIVE_PREFIX" value=".+" match="regexp"/>
+            </condition>
+        </external_linker_flag>
+        <external_library location="-larchive">
+            <condition>
+                <platform excluded_value="windows"/>
+                <custom name="ARC_NATIVE_MODE" value="^(system)?$" match="regexp"/>
+                <custom name="ARC_LIBARCHIVE_LIBRARY" excluded_value=".+" match="regexp"/>
+            </condition>
+        </external_library>
+        <external_library location="archive.lib">
+            <condition>
+                <platform value="windows"/>
+                <custom name="ARC_NATIVE_MODE" value="^(system)?$" match="regexp"/>
+                <custom name="ARC_LIBARCHIVE_LIBRARY" excluded_value=".+" match="regexp"/>
+            </condition>
+        </external_library>
+        <external_library location="${ARC_LIBARCHIVE_LIBRARY}">
+            <condition>
+                <custom name="ARC_NATIVE_MODE" value="^(system)?$" match="regexp"/>
+                <custom name="ARC_LIBARCHIVE_LIBRARY" value=".+" match="regexp"/>
+            </condition>
+        </external_library>
+        <external_cflag value="-DARC_SYSTEM_LIBARCHIVE">
+            <condition>
+                <platform excluded_value="windows"/>
+                <custom name="ARC_NATIVE_MODE" value="^(system)?$" match="regexp"/>
+            </condition>
+        </external_cflag>
+        <external_cflag value="/DARC_SYSTEM_LIBARCHIVE">
+            <condition>
+                <platform value="windows"/>
+                <custom name="ARC_NATIVE_MODE" value="^(system)?$" match="regexp"/>
+            </condition>
+        </external_cflag>
+        <external_cflag value="/MD">
+            <condition>
+                <platform value="windows"/>
+                <custom name="ARC_NATIVE_MODE" value="^(system)?$" match="regexp"/>
+                <custom name="ARC_SYSTEM_CRT" value="md"/>
+            </condition>
+        </external_cflag>
+        <external_cflag value="/DLIBARCHIVE_STATIC">
+            <condition>
+                <platform value="windows"/>
+                <custom name="ARC_NATIVE_MODE" value="^(system)?$" match="regexp"/>
+                <custom name="ARC_SYSTEM_STATIC" value="true"/>
+            </condition>
+        </external_cflag>
         <library name="free_elks" location="$GOBO/library/free_elks/library_ge.ecf">
             <condition><custom name="GOBO_EIFFEL" value="ge"/></condition>
         </library>
         <library name="base" location="$ISE_LIBRARY/library/base/base.ecf">
             <condition><custom name="GOBO_EIFFEL" excluded_value="ge"/></condition>
         </library>
+        <external_cflag value="/D_WIN32_WINNT=0x0A00">
+            <condition><platform value="windows"/></condition>
+        </external_cflag>
         <external_include location="$ECF_CONFIG_PATH/src/core/c"/>
         <cluster name="core" location="src/core" recursive="false"/>
     </target>
     <target name="cli" extends="arc">
         <root class="ARC_CLI" feature="make"/>
+        <external_linker_flag value="-static">
+            <condition>
+                <platform value="unix"/>
+                <custom name="ARC_NATIVE_MODE" value="conan"/>
+                <custom name="ARC_LIBC" value="musl"/>
+            </condition>
+        </external_linker_flag>
         <setting name="console_application" value="true"/>
         <setting name="executable_name" value="arc"/>
         <library name="cli_library" location="vendor/cli/cli.ecf"/>

@@ -9,14 +9,31 @@ CONAN_HOME = "{{ config_root }}/build/conan"
 description = "Detect the native toolchain, deploy static dependencies and generate ECF"
 run = "python scripts/prepare.py"
 
+[tasks.build]
+description = "Build and verify a maximally static release CLI from prepared dependencies"
+run = "python scripts/prepare.py --build --skip-prepare"
+
 [tasks.package]
 description = "Package Eiffel source, native dependencies, licenses and target metadata"
-run = "python scripts/package.py"
+run = "python scripts/package.py --skip-prepare"
 
 [tasks.test]
-description = "Check cross-platform dependency metadata and package contracts"
+description = "Build and run metadata, assertion-enabled probes and CLI checks"
+depends = ["test-metadata", "test-native"]
+
+[tasks.test-metadata]
+description = "Check dependency, packaging and executable import contracts"
 run = "python -m unittest discover -s tests -p 'test_*.py'"
+
+[tasks.test-native]
+description = "Rebuild and run all probes and CLI integration"
+depends = ["build"]
+run = "python tests/check_archive.py --build"
 
 [tasks.test-cli]
 description = "Check explicitly supplied CLI executables and unpack behavior"
 run = "python tests/check_cli.py"
+
+[tasks.test-system]
+description = "Compile a source-only core consumer with system libarchive, without Conan"
+run = "python tests/check_archive.py --system"

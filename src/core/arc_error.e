@@ -7,6 +7,7 @@ class ARC_ERROR
 
 create {ARC_WRITER, ARC_READER, ARC_ARCHIVE, ARC_ERROR}
 	make,
+	make_system,
 	make_native
 
 feature {NONE} -- Initialization
@@ -21,6 +22,15 @@ feature {NONE} -- Initialization
 		ensure
 			message_copied: message.same_string (a_message)
 			no_cleanup_failures: cleanup_error_count = 0
+		end
+
+	make_system (a_code: INTEGER; context: READABLE_STRING_8)
+			-- Snapshot an errno or encoded Win32 diagnostic before cleanup can change native buffers.
+		local
+			bytes: STRING_8
+		do
+			create bytes.make_from_c ({ARC_NATIVE}.system_message (a_code))
+			make ({ARC_NATIVE}.Archive_failed, a_code, context.to_string_8 + ": " + bytes)
 		end
 
 	make_native (handle: POINTER; a_status: INTEGER)
@@ -48,7 +58,7 @@ feature -- Access
 			-- Original libarchive operation status.
 
 	code: INTEGER
-			-- Original errno-style code, or zero when unavailable.
+			-- Native error code; standalone Arc failures use positive errno or negative Win32 codes.
 
 	message: IMMUTABLE_STRING_8
 			-- Copied native message bytes; no password or formatting is added.

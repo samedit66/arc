@@ -39,7 +39,7 @@ feature -- Execution
 			-- Validate all CLI arguments before creating output, then pack and finalize it.
 		local
 			writer: ARC_ARCHIVE
-			info: FILE_INFO
+			info: ARC_PATHS
 			sources: ARRAYED_LIST [STRING_32]
 			registrations: ARRAYED_LIST [TUPLE [path: PATH; stored_name: STRING_32]]
 			archive_name, source_name, stored_name, explicit_format: STRING_32
@@ -89,22 +89,21 @@ feature -- Execution
 				fail ("Keeping the root requires one directory", Invalid_call)
 			end
 			create registrations.make (sources.count)
-			create info.make
-			info.set_is_following_symlinks (False)
+			create info
 			across sources as source loop
 				if source.is_empty then
 					fail ("Source path must not be empty", Invalid_call)
 				end
 				create source_path.make_from_string (source)
-				info.update (source_path.name)
-				if not info.exists then
+				info.classify_source (source_path)
+				if info.source_error_code /= 0 then
 					fail ({STRING_32} "Source not found: " + {ARC_ENTRY_DISPLAY}.escaped (source), 1)
 				end
-				if (implicit_source or keep_root) and (not info.is_directory or info.is_symlink) then
+				if (implicit_source or keep_root) and (not info.is_directory or info.is_symbolic_link) then
 					fail ("A real source directory is required", Invalid_call)
 				end
 				create stored_name.make_empty
-				if sources.count /= 1 or keep_root or not info.is_directory or info.is_symlink then
+				if sources.count /= 1 or keep_root or not info.is_directory or info.is_symbolic_link then
 					if attached source_path.canonical_path.entry as entry then
 						stored_name := entry.name.to_string_32
 					else

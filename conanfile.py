@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 import platform
+import os
 
 from conan import ConanFile
 from conan.errors import ConanInvalidConfiguration
@@ -39,6 +40,8 @@ class ArcDependencies(ConanFile):
             raise ConanInvalidConfiguration(f"Unsupported compiler for {system}: {compiler}")
         if str(self.settings.arch) not in {"x86_64", "armv8"}:
             raise ConanInvalidConfiguration("Supported architectures: x86_64 and armv8")
+        if system == "Windows" and str(self.settings.compiler.runtime) != "static":
+            raise ConanInvalidConfiguration("Arc Conan packages require static MSVC runtime (/MT)")
         for dependency in self.dependencies.host.values():
             if dependency.options.get_safe("shared", False):
                 raise ConanInvalidConfiguration(f"Shared dependency is not supported: {dependency.ref}")
@@ -54,7 +57,11 @@ class ArcDependencies(ConanFile):
             info = dependency.cpp_info.aggregated_components()
             infos.append({name: list(getattr(info, name) or []) for name in fields})
         settings = {name: str(value) for name, value in self.settings.items()}
-        (output / "native.ecf").write_bytes(static_ecf(infos, output, settings["compiler"]))
+        if settings["os"] == "Linux":
+            settings["libc"] = os.environ.get("ARC_LIBC", "")
+            if settings["libc"] not in {"glibc", "musl"}:
+                raise ConanInvalidConfiguration("Set ARC_LIBC to glibc/musl, or use scripts/prepare.py")
+        (output / "native.ecf").write_bytes(static_ecf(infos, output, settings["compiler"], settings=settings))
         backend = {"Macos": "CommonCrypto", "Windows": "CNG", "Linux": "OpenSSL"}[settings["os"]]
         manifest = {
             "package_name": package_name(settings),

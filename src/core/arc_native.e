@@ -5,7 +5,7 @@ note
 
 class ARC_NATIVE
 
-create {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE}
+create {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE, ARC_PATHS}
 	make
 
 feature {NONE} -- Initialization
@@ -15,12 +15,13 @@ feature {NONE} -- Initialization
 		do
 			last_status := Archive_ok
 			create system_error_slot.make ({PLATFORM}.integer_32_bytes)
+			create system_cleanup_slot.make ({PLATFORM}.integer_32_bytes)
 			last_descriptor := -1
 		ensure
 			no_pointer: last_pointer = default_pointer
 		end
 
-feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE} -- Native command results
+feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE, ARC_PATHS} -- Native command results
 
 	last_status: INTEGER
 			-- Libarchive result of the latest status-producing native command.
@@ -31,10 +32,35 @@ feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE} -- Native command resul
 	last_descriptor: INTEGER
 			-- Owned descriptor returned by the latest exclusive creation; -1 on failure.
 
-	last_system_code: INTEGER
-			-- Captured errno from the latest standalone filesystem command; zero on success.
+	last_cleanup_code: INTEGER
+			-- Separate close failure from the latest root, classification or identity operation; zero otherwise.
 
-feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE} -- Native constants
+	last_is_output_source: BOOLEAN
+			-- Did the latest source identity check match the owned output file?
+
+	check_output_source (descriptor: INTEGER; path: POINTER)
+			-- Compare an ordinary source with the owned output and retain system diagnostics.
+		do
+			last_is_output_source := c_is_output_source (descriptor, path, system_error_slot.item, system_cleanup_slot.item)
+			last_system_code := system_error_slot.read_integer_32 (0)
+			last_cleanup_code := system_cleanup_slot.read_integer_32 (0)
+		end
+
+	last_source_type: INTEGER
+			-- Latest physically inspected AE_IF* type; zero for an error or unsupported reparse point.
+
+	classify_source (path: POINTER)
+			-- Inspect one native path without following symlinks or junctions.
+		do
+			last_source_type := c_source_type (path, system_error_slot.item, system_cleanup_slot.item)
+			last_system_code := system_error_slot.read_integer_32 (0)
+			last_cleanup_code := system_cleanup_slot.read_integer_32 (0)
+		end
+
+	last_system_code: INTEGER
+			-- Captured system error: positive errno, negative Win32 code, or zero on success.
+
+feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE, ARC_PATHS} -- Native constants
 
 	Archive_ok: INTEGER
 			-- Successful libarchive status.
@@ -82,7 +108,7 @@ feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE} -- Native constants
 			instance_free: class
 		end
 
-feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE} -- Fresh resource queries
+feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE, ARC_PATHS} -- Fresh resource queries
 
 	new_writer: POINTER
 			-- Fresh owned writer; native allocation failure is fatal.
@@ -134,7 +160,7 @@ feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE} -- Fresh resource queri
 			non_null_result: Result /= default_pointer
 		end
 
-feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE} -- Borrowed value queries
+feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE, ARC_PATHS} -- Borrowed value queries
 
 	entry_size (entry: POINTER): INTEGER_64
 			-- Declared logical size of an entry.
@@ -176,7 +202,7 @@ feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE} -- Borrowed value queri
 			"return (void *)archive_error_string($handle);"
 		end
 
-feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE} -- Native commands
+feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE, ARC_PATHS} -- Native commands
 
 	entry_free (entry: POINTER)
 			-- Release an owned entry, never a borrowed reader entry.
@@ -206,11 +232,11 @@ feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE} -- Native commands
 		end
 
 	entry_set_native_name (entry, name: POINTER)
-			-- Copy a POSIX filesystem pathname into an owned entry.
+			-- Copy a platform-native filesystem pathname into an owned entry.
 		external
 			"C inline use <libarchive_wrapper.h>"
 		alias
-			"archive_entry_copy_pathname($entry, $name);"
+			"libarchive_wrapper_set_native_name($entry, $name);"
 		end
 
 	entry_set_directory (entry: POINTER)
@@ -264,7 +290,7 @@ feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE} -- Native commands
 		end
 
 	open_reader (handle, path: POINTER)
-			-- Enable available formats and filters and open a POSIX archive path.
+			-- Enable available formats and filters and open a native archive path.
 		do
 			last_status := c_read_open (handle, path)
 		end
@@ -293,10 +319,10 @@ feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE} -- Native commands
 			last_status := c_disk_options (handle)
 		end
 
-	open_source (writer, entry, path, cleanup_code: POINTER)
+	open_source (writer, metadata, entry, path, cleanup_code: POINTER)
 			-- Open a source and publish its owned FILE pointer; preserve primary and cleanup diagnostics.
 		do
-			last_pointer := c_source_open (writer, entry, path, cleanup_code)
+			last_pointer := c_source_open (writer, metadata, entry, path, cleanup_code)
 			if last_pointer = default_pointer then
 				last_status := Archive_failed
 			else
@@ -415,18 +441,21 @@ feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE} -- Native commands
 		end
 
 	system_message (code: INTEGER): POINTER
-			-- Borrowed strerror bytes; copy before another native operation.
+			-- Borrowed diagnostic bytes for positive errno or negative Win32 code; copy immediately.
 		external
 			"C inline use <libarchive_wrapper.h>"
 		alias
-			"return (void *)strerror($code);"
+			"return (void *)libarchive_wrapper_system_message($code);"
+		ensure
+			instance_free: class
 		end
 
 	create_directory (path: POINTER)
 			-- Exclusively create a directory and publish its owned physical path or captured errno.
 		do
-			last_pointer := c_create_directory (path, system_error_slot.item)
+			last_pointer := c_create_directory (path, system_error_slot.item, system_cleanup_slot.item)
 			last_system_code := system_error_slot.read_integer_32 (0)
+			last_cleanup_code := system_cleanup_slot.read_integer_32 (0)
 		end
 
 	free_path (path: POINTER)
@@ -438,7 +467,7 @@ feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE} -- Native commands
 		end
 
 	open_directory (path: POINTER)
-			-- Publish an owned DIR pointer or a separately captured opening errno.
+			-- Publish an owned native directory iterator or a captured system error.
 		do
 			last_pointer := c_directory_open (path, system_error_slot.item)
 			last_system_code := system_error_slot.read_integer_32 (0)
@@ -452,15 +481,31 @@ feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE} -- Native commands
 		end
 
 	close_directory (directory: POINTER)
-			-- Consume one DIR pointer and publish a separately captured closing errno.
+			-- Consume one native directory iterator and publish a captured closing error.
 		do
 			last_system_code := c_directory_close (directory)
 		end
 
 feature {NONE} -- C ABI result functions
 
-	c_create_directory (path, code_slot: POINTER): POINTER
-			-- Owned realpath after exclusive mkdir, or NULL with separately captured errno.
+	c_is_output_source (descriptor: INTEGER; path, code_slot, cleanup_slot: POINTER): BOOLEAN
+			-- Checked native identity comparison against an owned descriptor.
+		external
+			"C use <libarchive_wrapper.h>"
+		alias
+			"libarchive_wrapper_is_output_source"
+		end
+
+	c_source_type (path, code_slot, cleanup_slot: POINTER): INTEGER
+			-- Physical native type with captured system error; never follow a reparse target.
+		external
+			"C use <libarchive_wrapper.h>"
+		alias
+			"libarchive_wrapper_source_type"
+		end
+
+	c_create_directory (path, code_slot, cleanup_slot: POINTER): POINTER
+			-- Owned physical native path after exclusive root creation, or NULL with separate errors.
 		external
 			"C use <libarchive_wrapper.h>"
 		alias
@@ -536,7 +581,7 @@ feature {NONE} -- C ABI result functions
 		external
 			"C inline use <libarchive_wrapper.h>"
 		alias
-			"LIBARCHIVE_WRAPPER_ENTER($handle, return ARCHIVE_FATAL); int r = archive_read_support_filter_all($handle); if (r == ARCHIVE_OK) r = archive_read_support_format_all($handle); if (r == ARCHIVE_OK) r = archive_read_open_filename($handle, $path, 65536); LIBARCHIVE_WRAPPER_LEAVE(); return r;"
+			"return libarchive_wrapper_open_reader($handle, $path);"
 		end
 
 	c_read_next (handle, entry_slot: POINTER): INTEGER
@@ -571,7 +616,7 @@ feature {NONE} -- C ABI result functions
 			"return archive_write_disk_set_options($handle, ARCHIVE_EXTRACT_SECURE_NODOTDOT | ARCHIVE_EXTRACT_SECURE_SYMLINKS | ARCHIVE_EXTRACT_NO_OVERWRITE);"
 		end
 
-	c_source_open (writer, entry, path, cleanup_code: POINTER): POINTER
+	c_source_open (writer, metadata, entry, path, cleanup_code: POINTER): POINTER
 			-- C ABI result of a state-changing operation; used only by command adapters.
 		external
 			"C use <libarchive_wrapper.h>"
@@ -604,7 +649,7 @@ feature {NONE} -- C ABI result functions
 		end
 
 	c_create_output (path, code_slot: POINTER): INTEGER
-			-- C ABI result of exclusive output creation, with captured errno.
+			-- C ABI result of exclusive binary output creation, with captured system error.
 		external
 			"C use <libarchive_wrapper.h>"
 		alias
@@ -656,7 +701,7 @@ feature {NONE} -- C ABI result functions
 		external
 			"C inline use <libarchive_wrapper.h>"
 		alias
-			"LIBARCHIVE_WRAPPER_ENTER($handle, return ARCHIVE_FATAL); archive_entry_copy_pathname($entry, $path); int r = archive_read_disk_entry_from_file($handle, $entry, -1, NULL); LIBARCHIVE_WRAPPER_LEAVE(); return r;"
+			"LIBARCHIVE_WRAPPER_ENTER($handle, return ARCHIVE_FATAL); libarchive_wrapper_set_native_name($entry, $path); int r = archive_read_disk_entry_from_file($handle, $entry, -1, NULL); LIBARCHIVE_WRAPPER_LEAVE(); return r;"
 		end
 
 	c_read_link_target (handle, entry: POINTER): POINTER
@@ -690,6 +735,9 @@ feature {NONE} -- C ABI result functions
 		alias
 			"libarchive_wrapper_directory_close"
 		end
+
+	system_cleanup_slot: MANAGED_POINTER
+			-- Separate system cleanup diagnostic for a multi-call native primitive.
 
 	system_error_slot: MANAGED_POINTER
 			-- Standalone int32_t errno output, independent of libarchive diagnostics.

@@ -36,6 +36,11 @@ def package_name(settings: Mapping[str, str]) -> str:
         parts.append(runtime)
     if settings.get("os.version"):
         parts.append("min" + settings["os.version"])
+    if system == "linux":
+        libc = settings.get("libc", "glibc")
+        if libc not in {"glibc", "musl"}:
+            raise ValueError(f"Unsupported Linux libc: {libc}")
+        parts.append(libc)
     parts.append(settings["build_type"].lower())
     if any(not re.fullmatch(r"[A-Za-z0-9_.+-]+", part) for part in parts):
         raise ValueError("Unsafe platform or ABI identifier in package settings")
@@ -47,6 +52,7 @@ def static_ecf(
     output: str | Path,
     compiler: str,
     uuid: str = "BD87421C-37CA-48B8-8BB9-5591AE642EFA",
+    settings: Mapping[str, str] | None = None,
 ) -> bytes:
     """Return UTF-8 ECF for deployed static dependencies without writing a file.
 
@@ -102,6 +108,13 @@ def static_ecf(
             add("external_linker_flag", "-framework " + framework)
         for flag in info.get("exelinkflags", []):
             add("external_linker_flag", flag)
+    add("external_cflag", ("/D" if msvc else "-D") + "ARC_CONAN_LIBARCHIVE")
+    if msvc and settings is not None:
+        runtime = settings["compiler.runtime"]
+        flag = "/MT" if runtime == "static" else "/MD"
+        if settings.get("compiler.runtime_type") == "Debug":
+            flag += "d"
+        add("external_cflag", flag)
     for library in system_libraries:
         add("external_library", library)
     for kind, values in externals.items():

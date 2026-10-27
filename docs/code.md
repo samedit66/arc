@@ -1,6 +1,8 @@
 # Source map
 
-The `arc` ECF target includes only `src/core` and the prepared native dependencies.
+The `arc` ECF target includes only `src/core` and either system libarchive or
+explicitly selected prepared native dependencies. Prepared library packages bind
+their own native ECF and contain no CLI target.
 The `cli` target adds commands in `src/cli`, terminal presentation in
 `src/cli/presentation`, and the pinned `vendor/cli` submodule. No legacy
 `ARCHIVE_*`, session, options or cursor classes remain.
@@ -10,14 +12,14 @@ The `cli` target adds commands in `src/cli`, terminal presentation in
 | File | Responsibility |
 | --- | --- |
 | [arc_formats.e](../src/core/arc_formats.e) | Instance-free immutable creation profiles, validation and filename suffix inference. |
-| [arc_paths.e](../src/core/arc_paths.e) | Instance-free lexical checks for native paths and nonempty archive entry names. |
+| [arc_paths.e](../src/core/arc_paths.e) | Instance-free path/name policy and explicit physical source classification. |
 | [arc_writer.e](../src/core/arc_writer.e) | One archive writer; ordinary files, directories and symlinks; exclusive output ownership, commit and abort cleanup. |
 | [arc_reader.e](../src/core/arc_reader.e) | One sequential reader; metadata snapshots, password-based reading, body consumption and selected block extraction. |
 | [arc_archive.e](../src/core/arc_archive.e) | Own one reader or writer; register sources, pack, extract, inspect remaining headers, verify remaining bodies and report progress. |
 | [arc_archive_info.e](../src/core/arc_archive_info.e) | Immutable statistics and metadata snapshot from one remaining-header inspection. |
 | [arc_error.e](../src/core/arc_error.e) | Immutable native status, errno, diagnostic bytes and separate cleanup failures. |
 | [arc_native.e](../src/core/arc_native.e) | Direct libarchive bindings, native command adapters and immediate result queries. |
-| [libarchive_wrapper.h](../src/core/c/libarchive_wrapper.h) | Checked POSIX source/output/directory primitives and single-block transfers; no custom C contexts or enums. |
+| [libarchive_wrapper.h](../src/core/c/libarchive_wrapper.h) | Checked POSIX/Windows source/output/directory primitives and single-block transfers; no custom C contexts or enums. |
 
 Reader entries are borrowed from libarchive. The reader copies metadata before
 publishing it and clones headers before changing extraction destinations. Writer
@@ -48,8 +50,8 @@ parent-directory aliases. Locale changes are scoped to native calls.
 ## Infrastructure and tests
 
 `conanfile.py`, `conan.lock`, `profiles/`, `mise.toml` and `scripts/` retain native
-preparation and relocatable packaging. Profile metadata includes Windows for future
-use; the current C wrapper is POSIX-only.
+preparation, static application inspection and separate library/application packaging. Profile metadata includes Windows for future
+use; Windows native implementation is pending runtime verification.
 
 [tests/demo.ecf](../tests/demo.ecf), [tests/checks.ecf](../tests/checks.ecf) and
 [tests/package_checks.ecf](../tests/package_checks.ecf) replace the former API probes.
@@ -64,3 +66,7 @@ The command cluster contains only commands and the application entry point.
 Presentation helpers belong to the CLI target only. Terminal formatting is
 instance-free; tree nodes retain state. Profile suffix inference belongs to
 `ARC_FORMATS`, while default extraction directory naming stays in the unpack command.
+
+`tests/check_archive.py --build` runs the complete native probe/CLI suite;
+`--system` checks a source-only system consumer, and `--relocate ZIP` checks
+a built library or application package after moving it.

@@ -58,8 +58,9 @@ CLI commands delegate these operations and retain presentation and exit status.
 - Automatic archive-name collision detection and full raw legacy filename metadata
   are not part of the small API. The CLI tree labels native regular-file types;
   the public `entry_is_hardlink` query now exposes this distinction for inspection.
-- POSIX-only native code replaces the former Windows branches. Conan profiles and
-  metadata support are retained, but they do not establish Windows API support.
+- The existing wrapper now has Windows/MSVC branches for native paths, resources,
+  iteration and thread locale. Windows runtime validation is still outstanding;
+  Conan/profile tests alone do not establish Windows support.
 
 ## CLI organization
 
@@ -101,3 +102,43 @@ The migration verification completed successfully:
 - Eiffel feature-documentation audit, local Markdown links and `git diff --check`.
 
 The known Gobo/macOS deprecated linker-symbol warnings remain; builds succeed.
+
+## Windows implementation status
+
+Windows code was added without new source files. Filesystem operations use wide
+APIs; data transfer and archive policy retain the existing Eiffel orchestration.
+`ARC_PATHS` now provides explicit physical source inspection in addition to
+instance-free lexical predicates. This avoids relying on POSIX `lstat` semantics
+from Eiffel runtime classes on Windows. The output is excluded by checked native
+file identity against its owned descriptor. Source reparse points are never
+followed; junctions and unsupported tags fail packing.
+
+Extraction validation distinguishes POSIX names from Windows separators, devices,
+streams and normalization restrictions. Incompatible names are rejected. System
+errors retain positive errno or negative Win32 codes; cleanup failures remain
+separate. POSIX behavior and the hardlink policy are retained. The Windows branch
+has not been compiled or run on Windows; see development for the validation matrix.
+
+## Build and installation modes
+
+Source ECF now defaults to system libarchive (supported baseline 3.8.7), without
+Python, Conan, CLI or `build/native`. Select `ARC_NATIVE_MODE=conan` explicitly for
+prepared dependencies in a checkout. Prepared library ZIPs instead bind their
+native ECF unconditionally and omit CLI source/targets/submodules. They are ready
+to connect from a consumer ECF without mode overrides. Native ABIs still must match.
+
+Application builds use finalized Gobo code with Boehm GC and inspect the resulting
+executable. Windows Conan/runtime is static (`/MT`), macOS permits only Apple system
+imports, and Linux distribution requires native musl and no interpreter/shared
+imports. System Windows DLL clients require a common DLL CRT (`/MD`) because CRT
+descriptors cross the boundary. System linkage is not a static distribution guarantee.
+Linux package names now distinguish libc; older Linux deployments need preparation
+again. Host and build profiles can be selected separately, and failed deployment
+swaps restore the previous native directory.
+
+The existing package script produces separate `-library.zip` and `-application.zip`
+artifacts. Python is only required for preparation, packaging or test automation;
+consumers of the prepared library need Eiffel/C compilers, and application users
+need only the executable and permitted OS components. Windows/MSVC and Linux/musl
+build paths remain unverified on native hosts. macOS relocation with Unicode uses
+the generated Gobo C script explicitly due to the current compiler-driver limitation.

@@ -65,19 +65,24 @@ feature -- Entry creation
 			last_written_bytes := 0
 			entry_written_bytes := 0
 			path := source_path.native_string
-			native.open_source (handle, entry, path.item, cleanup_code.item)
-			source := native.last_pointer
-			if source = default_pointer then
-				check_status (native.Archive_failed)
-				if cleanup_code.read_integer_32 (0) /= 0 then
-					record_failure (create {ARC_ERROR}.make (native.Archive_failed,
-						cleanup_code.read_integer_32 (0), "Cannot close source after metadata failure"))
+			if {PLATFORM}.is_windows then
+				prepare_metadata_reader
+			end
+			if not has_failed then
+				native.open_source (handle, metadata_reader, entry, path.item, cleanup_code.item)
+				source := native.last_pointer
+				if source = default_pointer then
+					check_status (native.Archive_failed)
+					if cleanup_code.read_integer_32 (0) /= 0 then
+						record_failure (create {ARC_ERROR}.make (native.Archive_failed,
+							cleanup_code.read_integer_32 (0), "Cannot close source after metadata failure"))
+					end
+				else
+					size_snapshot := native.entry_size (entry)
+					set_entry_name (entry_name)
+					native.write_header (handle, entry)
+					check_status (native.last_status)
 				end
-			else
-				size_snapshot := native.entry_size (entry)
-				set_entry_name (entry_name)
-				native.write_header (handle, entry)
-				check_status (native.last_status)
 			end
 		ensure
 			entry_owned: has_entry
@@ -128,11 +133,7 @@ feature -- Entry creation
 			size_snapshot := 0
 			last_written_bytes := 0
 			entry_written_bytes := 0
-			if metadata_reader = default_pointer then
-				metadata_reader := native.new_metadata_reader
-				native.configure_metadata (metadata_reader)
-				check_metadata_status
-			end
+			prepare_metadata_reader
 
 			if not has_failed then
 				path := source_path.native_string
@@ -236,6 +237,24 @@ feature -- Closing
 
 feature {ARC_ARCHIVE} -- Traversal failures
 
+	is_output_source: BOOLEAN
+			-- Did the latest checked ordinary source refer to this writer's output?
+
+	check_output_source (path: PATH)
+			-- Compare a source with the owned output while preserving primary and cleanup diagnostics.
+		require
+			ready: is_open and not has_failed and not has_entry
+			valid_path: {ARC_PATHS}.is_valid_path (path)
+		local
+			name: NATIVE_STRING
+		do
+			name := path.native_string
+			native.check_output_source (output_descriptor, name.item)
+			is_output_source := native.last_is_output_source
+			check_system_error (native.last_system_code, "Cannot compare source with output")
+			check_system_error (native.last_cleanup_code, "Cannot close source identity handle")
+		end
+
 	report_failure (message: READABLE_STRING_8)
 			-- Record an expected Eiffel-side traversal failure before cleanup starts.
 		do
@@ -245,7 +264,7 @@ feature {ARC_ARCHIVE} -- Traversal failures
 	report_system_failure (code: INTEGER; message: READABLE_STRING_8)
 			-- Record an expected ELKS I/O failure using its available system code.
 		do
-			record_failure (create {ARC_ERROR}.make (native.Archive_failed, code, message))
+			record_failure (create {ARC_ERROR}.make_system (code, message))
 		end
 
 feature -- State
@@ -371,14 +390,20 @@ feature {NONE} -- Implementation
 		end
 
 	check_system_error (code: INTEGER; stage: READABLE_STRING_8)
-			-- Snapshot a standalone errno before any later cleanup can replace diagnostics.
-		local
-			message: STRING_8
+			-- Snapshot a standalone system failure before another native operation changes its diagnostic.
 		do
 			if code /= 0 then
-				create message.make_from_c (native.system_message (code))
-				record_failure (create {ARC_ERROR}.make (native.Archive_failed, code,
-					stage.to_string_8 + ": " + message))
+				record_failure (create {ARC_ERROR}.make_system (code, stage))
+			end
+		end
+
+	prepare_metadata_reader
+			-- Acquire one reusable physical metadata reader and retain configuration errors.
+		do
+			if metadata_reader = default_pointer then
+				metadata_reader := native.new_metadata_reader
+				native.configure_metadata (metadata_reader)
+				check_metadata_status
 			end
 		end
 

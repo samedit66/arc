@@ -430,7 +430,13 @@ feature -- Extraction
 			native.create_directory (name.item)
 			resolved := native.last_pointer
 			if resolved = default_pointer then
-				failure := create {ARC_ERROR}.make (native.Archive_failed, native.last_system_code, "Cannot create extraction destination")
+				failure := create {ARC_ERROR}.make_system (native.last_system_code, "Cannot create extraction destination")
+				if native.last_cleanup_code /= 0 then
+					check attached failure as primary then
+						failure := primary.with_cleanup_error (create {ARC_ERROR}.make_system (
+							native.last_cleanup_code, "Cannot close destination handle"))
+					end
+				end
 			else
 				create resolved_name.make_from_pointer (resolved)
 				create destination.make_from_string (resolved_name.string)
@@ -440,7 +446,7 @@ feature -- Extraction
 
 				check attached input_owner as input then
 					from until after loop
-						if not is_valid_relative_name (entry_name) then
+						if not {ARC_PATHS}.is_valid_extraction_name (entry_name, {PLATFORM}.is_windows) then
 							failure := create {ARC_ERROR}.make (native.Archive_failed, 0, "Invalid relative archive pathname")
 						else
 							extract_entry (input, destination.extended (entry_name), callback)
@@ -580,17 +586,6 @@ feature {NONE} -- Extraction implementation
 			end
 		end
 
-	is_valid_relative_name (name: READABLE_STRING_32): BOOLEAN
-			-- Is the original POSIX name nonempty, relative and free of NUL and parent components?
-		do
-			Result := not name.is_empty and then name [1] /= '/' and then not name.has ('%U')
-			across name.split ('/') as part loop
-				Result := Result and not part.same_string ("..")
-			end
-		ensure
-			instance_free: class
-		end
-
 feature {NONE} -- Ownership
 
 	input_owner: detachable ARC_READER
@@ -614,17 +609,19 @@ feature {NONE} -- Traversal
 		progress: detachable PROCEDURE [TUPLE [name: IMMUTABLE_STRING_32; written, total: NATURAL_64]])
 			-- Classify one source physically and dispatch without following links.
 		local
-			info: FILE_INFO
+			info: ARC_PATHS
 			written: NATURAL_64
 		do
 			if not writer.has_failed and not path.same_as (writer.output_path) then
-				create info.make
-				info.set_is_following_symlinks (False)
-				info.update (path.name)
+				create info
+				info.classify_source (path)
 
-				if not info.exists then
-					writer.report_failure ("Source does not exist or cannot be inspected")
-				elseif info.is_symlink then
+				if info.source_error_code /= 0 then
+					writer.report_system_failure (info.source_error_code, "Cannot inspect source")
+					if info.source_cleanup_code /= 0 then
+						writer.report_system_failure (info.source_cleanup_code, "Cannot close source metadata handle")
+					end
+				elseif info.is_symbolic_link then
 					if name.is_empty then
 						writer.report_failure ("An empty archive root requires a real directory")
 					else
@@ -639,8 +636,9 @@ feature {NONE} -- Traversal
 					if not writer.has_failed then
 						visit_directory (writer, path, name, progress)
 					end
-				elseif info.is_plain then
-					if path.is_same_file_as (writer.output_path) then
+				elseif info.is_regular then
+					writer.check_output_source (path)
+					if writer.has_failed or writer.is_output_source then
 						-- Exclude the owned output even when parent directories have path aliases.
 					elseif name.is_empty then
 						writer.report_failure ("An empty archive root requires a real directory")

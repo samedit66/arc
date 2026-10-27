@@ -27,12 +27,12 @@ The micro implementation is now the only library. All Eiffel classes use ARC_*:
 - src/core/arc_formats.e: immutable string creation profiles.
 - src/core/arc_error.e: immutable primary and separate cleanup errors.
 - src/core/arc_native.e: direct libarchive bindings and command/result adapters.
-- src/core/c/libarchive_wrapper.h: checked POSIX resource primitives and single-block transfers.
+- src/core/c/libarchive_wrapper.h: checked POSIX/Windows resource primitives and single-block transfers.
 - src/cli/: CLI presentation, filename policy, converted commands and explicit stubs.
 
 Keep the arc library target independent of CLI classes and vendor/cli. Preserve the
-pinned CLI submodule revision and interface. Native code is POSIX-only; Windows
-Conan metadata is retained but is not a runtime support claim.
+pinned CLI submodule revision and interface. Native code has POSIX and Windows/MSVC branches. Only Gobo/macOS is verified;
+Windows implementation and Conan metadata are not a verified runtime support claim.
 
 Reader entries are borrowed; writer entries and FILE sources are owned. Eiffel
 owns output descriptors and incomplete-output removal decisions. Native allocation

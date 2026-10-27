@@ -263,12 +263,11 @@ feature {NONE} -- Application
 	object_exists (path: PATH): BOOLEAN
 			-- Does this object itself exist, including a dangling symbolic link?
 		local
-			info: FILE_INFO
+			info: ARC_PATHS
 		do
-			create info.make
-			info.set_is_following_symlinks (False)
-			info.update (path.name)
-			Result := info.exists
+			create info
+			info.classify_source (path)
+			Result := info.source_error_code = 0
 		end
 
 	notifications: INTEGER

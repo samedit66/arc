@@ -98,6 +98,7 @@ feature {NONE} -- Application
 			then
 			end
 
+			check_path_policies
 			check_remaining_operations
 			check_inspection_and_passwords
 			check_cancellation
@@ -108,6 +109,28 @@ feature {NONE} -- Application
 		rescue
 			if attached archive as value then
 				value.abort
+			end
+		end
+
+	check_path_policies
+			-- Check both extraction policies independently of the host operating system.
+		do
+			check
+				ordinary_windows_name: {ARC_PATHS}.is_valid_extraction_name ("dir/file.txt", True)
+				windows_separators: {ARC_PATHS}.is_valid_extraction_name ("dir\file.txt", True)
+				posix_literal_backslash: {ARC_PATHS}.is_valid_extraction_name ("dir\..\file", False)
+				windows_parent_rejected: not {ARC_PATHS}.is_valid_extraction_name ("dir\..\file", True)
+				posix_parent_rejected: not {ARC_PATHS}.is_valid_extraction_name ("dir/../file", False)
+				absolute_rejected: not {ARC_PATHS}.is_valid_extraction_name ("/file", True)
+				drive_rejected: not {ARC_PATHS}.is_valid_extraction_name ("C:file", True)
+				unc_rejected: not {ARC_PATHS}.is_valid_extraction_name ("\server\share", True)
+				device_rejected: not {ARC_PATHS}.is_valid_extraction_name ("dir/nul.txt", True)
+				port_rejected: not {ARC_PATHS}.is_valid_extraction_name ("COM%/185/.txt", True)
+				stream_rejected: not {ARC_PATHS}.is_valid_extraction_name ("file:stream", True)
+				trailing_dot_rejected: not {ARC_PATHS}.is_valid_extraction_name ("dir./file", True)
+				trailing_space_rejected: not {ARC_PATHS}.is_valid_extraction_name ("file ", True)
+				wildcard_rejected: not {ARC_PATHS}.is_valid_extraction_name ("dir/*.txt", True)
+				posix_device_name_retained: {ARC_PATHS}.is_valid_extraction_name ("nul.txt", False)
 			end
 		end
 

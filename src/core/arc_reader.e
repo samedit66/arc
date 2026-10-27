@@ -129,7 +129,7 @@ feature -- Archive metadata
 feature -- Extraction
 
 	begin_extraction (destination_path: PATH)
-			-- Restore the current file or directory at a caller-selected POSIX path.
+			-- Restore the current file or directory at a caller-selected native path.
 			-- Clone metadata to preserve the original name; preserve symlinks and reject hardlinks.
 		require
 			positioned: is_open and has_entry and not has_failed
@@ -529,7 +529,7 @@ feature {NONE} -- Implementation
 		end
 
 	native: ARC_NATIVE
-			-- Stateless native bindings.
+			-- Native bindings with per-operation result slots.
 
 	entry_slot: MANAGED_POINTER
 			-- Output slot for a borrowed archive_entry pointer.
