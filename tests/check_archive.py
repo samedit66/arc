@@ -25,6 +25,8 @@ def build_and_check(root, compiler="ge"):
         if compiler == "ge":
             command = ["gec", "--gelint", "--gc=boehm", "--variable=ARC_NATIVE_MODE=conan",
                        "--target=" + target, str(config)]
+            if target == "cli":
+                command.insert(1, "--finalize")
             subprocess.run(command, cwd=root, env=env, check=True)
         else:
             # EiffelStudio has no Gobo-style --variable switch. Generate a configuration
