@@ -124,7 +124,7 @@ class PackageTests(unittest.TestCase):
         (root / "arc.ecf").write_bytes((Path(__file__).resolve().parents[1] / "arc.ecf").read_bytes())
         (root / "README.md").write_text("Fixture documentation\n")
         (root / "docs").mkdir()
-        (root / "docs/code.md").write_text("Source map fixture\n")
+        (root / "docs/code.md").write_bytes(b"Source map fixture\n")
         (root / "conan.lock").write_text("{}\n")
         cache = root / "build/conan"
         cache.mkdir()

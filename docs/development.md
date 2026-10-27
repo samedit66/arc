@@ -202,3 +202,22 @@ codes, with UTF-8 messages and separate cleanup errors. Libarchive diagnostics
 retain libarchive's own status/code/message. No Windows success claim should be
 made until native builds, all profile round trips, AES, link/name policies,
 cleanup and relocated consumer/CLI tests pass on Windows.
+
+## Continuous integration
+
+GitHub Actions builds the CLI and all four assertion-enabled probes on Ubuntu
+24.04, macOS 15 Intel and Windows Server 2022, with Gobo 26.06 and EiffelStudio
+25.12. Both compilers run the same eight-format, CLI, password and cleanup checks;
+packaging contracts run in every job. Failures in one combination do not cancel
+other combinations. Windows enables symlink creation and uses MSVC with static CRT.
+
+Run the shared checks locally after preparing native dependencies:
+
+```sh
+python3 tests/check_archive.py --build --compiler ge
+python3 tests/check_archive.py --build --compiler ise
+```
+
+EiffelStudio uses generated ECF copies in `build/ci`, leaving source configurations
+unchanged, and finalizes with `-keep` to preserve probe assertions. CI uses Linux
+glibc to test portability; it does not certify fully static musl releases.
