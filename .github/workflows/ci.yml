@@ -23,6 +23,8 @@ jobs:
     name: ${{ matrix.compiler }} / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    env:
+      GOBO_CC: ${{ matrix.os == 'windows-2022' && 'msc' || 'gcc' }}
     strategy:
       fail-fast: false
       matrix:
@@ -62,8 +64,6 @@ jobs:
       - name: Install EiffelStudio on macOS
         if: matrix.compiler == 'ise' && runner.os == 'macOS'
         run: |
-          brew install gtk+3 libiconv
-          echo "DYLD_FALLBACK_LIBRARY_PATH=$(brew --prefix)/lib:$(brew --prefix libiconv)/lib:$(brew --prefix gettext)/lib:/usr/lib" >> "$GITHUB_ENV"
           platform=macosx-x86-64
           archive="Eiffel_${EIFFELSTUDIO_VERSION}_rev_${EIFFELSTUDIO_REVISION}-${platform}.tar.bz2"
           curl -fsSL "https://www.eiffel.com/cdn/EiffelStudio/${EIFFELSTUDIO_VERSION}/${EIFFELSTUDIO_REVISION}/$archive" -o "$RUNNER_TEMP/$archive"
@@ -86,11 +86,14 @@ jobs:
         shell: bash
         run: |
           gec --version
-          if [ '${{ matrix.compiler }}' = ise ]; then ec -version; fi
+          if [ '${{ matrix.compiler }}' = ise ]; then
+            if [ "$RUNNER_OS" = macOS ]; then ecb -version; else ec -version; fi
+          fi
       - name: Packaging contracts
         run: python -m unittest discover -s tests -p 'test_*.py'
-      - name: Cache Conan dependencies
-        uses: actions/cache@v4
+      - name: Restore Conan dependencies
+        id: conan-cache
+        uses: actions/cache/restore@v4
         with:
           path: build/conan
           key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('conan.lock', 'conanfile.py', 'scripts/native_ecf.py') }}
@@ -99,6 +102,12 @@ jobs:
         run: python scripts/prepare.py
       - name: Compile and run all tests
         run: python tests/check_archive.py --build --compiler ${{ matrix.compiler }}
+      - name: Save Conan dependencies
+        if: always() && steps.conan-cache.outputs.cache-primary-key != '' && steps.conan-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/conan
+          key: ${{ steps.conan-cache.outputs.cache-primary-key }}
       - name: Check whitespace
         run: git diff --check
       - name: Retain build diagnostics

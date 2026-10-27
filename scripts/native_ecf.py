@@ -87,8 +87,9 @@ def static_ecf(
     for info in dependencies:
         for directory in info.get("includedirs", []):
             add("external_include", relative(directory))
+        # EiffelStudio normalizes leading slashes as paths; MSVC also accepts hyphen flags.
         for define in info.get("defines", []):
-            add("external_cflag", ("/D" if msvc else "-D") + define)
+            add("external_cflag", "-D" + define)
         for flag in info.get("cflags", []):
             add("external_cflag", flag)
         for library in info.get("libs", []):
@@ -108,10 +109,10 @@ def static_ecf(
             add("external_linker_flag", "-framework " + framework)
         for flag in info.get("exelinkflags", []):
             add("external_linker_flag", flag)
-    add("external_cflag", ("/D" if msvc else "-D") + "ARC_CONAN_LIBARCHIVE")
+    add("external_cflag", "-DARC_CONAN_LIBARCHIVE")
     if msvc and settings is not None:
         runtime = settings["compiler.runtime"]
-        flag = "/MT" if runtime == "static" else "/MD"
+        flag = "-MT" if runtime == "static" else "-MD"
         if settings.get("compiler.runtime_type") == "Debug":
             flag += "d"
         add("external_cflag", flag)

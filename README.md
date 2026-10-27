@@ -160,6 +160,7 @@ Arc needs no runtime configuration variables. These variables affect building an
 | `ARC_LIBC` | Linux libc recorded by the Conan recipe | `glibc`, `musl`; the preparation script detects and sets it |
 | `GOBO` | Gobo installation directory used by ECF library paths | `/opt/gobo` |
 | `GOBO_EIFFEL` | Selects the Eiffel base-library configuration | `ge` for Gobo, `ise` for EiffelStudio; application scripts set `ge` |
+| `GOBO_CC` | Gobo C backend; select MSVC for Windows Conan dependencies | `msc` on Windows, `gcc` on Linux/macOS |
 | `ISE_LIBRARY` | EiffelStudio library directory | Your EiffelStudio library root |
 | `CC` | C compiler used during dependency preparation | `clang`, `gcc`, an absolute compiler path |
 | `CXX` | C++ compiler used during dependency preparation | `clang++`, `g++`, an absolute compiler path |

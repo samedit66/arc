@@ -185,7 +185,7 @@ not claimed as tested.
 Use Windows 10 1803 or later with a matching MSVC/UCRT environment and the existing
 `profiles/windows-x86_64` profile.
 Run prepare from a Visual Studio Developer terminal, configure Gobo for MSVC, and
-build the CLI and all four probe ECFs. Use the resulting `.exe` paths explicitly in
+set `GOBO_CC=msc`, and build the CLI and all four probe ECFs. Use the resulting `.exe` paths explicitly in
 the Python checks above. Source tests use UTF-8 capture. Symlink tests require
 Developer Mode or elevation; junction tests run only on Windows. Install a `bsdtar`
 compatible independent reader for AES ZIP checks. Tests do not silently skip links.
@@ -218,6 +218,7 @@ python3 tests/check_archive.py --build --compiler ge
 python3 tests/check_archive.py --build --compiler ise
 ```
 
+macOS uses EiffelStudio’s headless `ecb` compiler, avoiding GTK/X11 dependencies.
 EiffelStudio uses generated ECF copies in `build/ci`, leaving source configurations
 unchanged, and finalizes with `-keep` to preserve probe assertions. CI uses Linux
 glibc to test portability; it does not certify fully static musl releases.
