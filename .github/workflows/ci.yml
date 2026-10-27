@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-15-intel, windows-2022]
+        os: [ubuntu-24.04, macos-15, windows-2022]
         compiler: [ge, ise]
     steps:
       - uses: actions/checkout@v6
@@ -64,7 +64,7 @@ jobs:
       - name: Install EiffelStudio on macOS
         if: matrix.compiler == 'ise' && runner.os == 'macOS'
         run: |
-          platform=macosx-x86-64
+          platform=macosx-armv6
           archive="Eiffel_${EIFFELSTUDIO_VERSION}_rev_${EIFFELSTUDIO_REVISION}-${platform}.tar.bz2"
           curl -fsSL "https://www.eiffel.com/cdn/EiffelStudio/${EIFFELSTUDIO_VERSION}/${EIFFELSTUDIO_REVISION}/$archive" -o "$RUNNER_TEMP/$archive"
           tar -xjf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP"
@@ -96,7 +96,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: build/conan
-          key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('conan.lock', 'conanfile.py', 'scripts/native_ecf.py') }}
+          key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('conan.lock', 'conanfile.py', 'scripts/native_ecf.py', 'scripts/prepare.py') }}
           restore-keys: native-${{ runner.os }}-${{ runner.arch }}-
       - name: Prepare native dependencies
         run: python scripts/prepare.py

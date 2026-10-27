@@ -147,7 +147,7 @@ python3 scripts/package.py --kind application
 
 Copy `arc` or `arc.exe` onto `PATH`. No build tools or third-party shared libraries are needed to run it.
 
-Gobo on macOS ARM64 is verified. The CI matrix builds and tests Gobo and EiffelStudio on Ubuntu, macOS Intel and Windows/MSVC. Linux/musl release builds require separate verification.
+Gobo on macOS ARM64 is verified. The CI matrix builds and tests Gobo and EiffelStudio on Ubuntu, macOS ARM64 and Windows/MSVC. Linux/musl release builds require separate verification.
 
 ### Environment variables
 

@@ -177,8 +177,15 @@ def prepare_dependencies(root: Path, profile: str | None = None, build_profile: 
         command = [conan, "install", ".", "-pr:h", host, "-pr:b", native_build,
                    "--build=*" if detected_libc == "musl" else "--build=missing",
                    "--deployer=full_deploy", "-of", temporary]
-        if sys.platform == "win32" and profile is None:
-            command += ["-s:h", "compiler.runtime=static"]
+        if sys.platform == "win32":
+            # libarchive 3.8.7 does not search for Conan's Windows zstd_static.lib.
+            hook = build / "libarchive-static-zstd.cmake"
+            hook.write_text("find_library(ZSTD_LIBRARY NAMES zstd_static REQUIRED)\n", encoding="utf-8")
+            variables = json.dumps({"CMAKE_PROJECT_libarchive_INCLUDE": hook.resolve().as_posix()})
+            command += ["-c:h", "libarchive/*:tools.cmake.cmaketoolchain:extra_variables=" + variables,
+                        "-c:h", 'libarchive/*:tools.info.package_id:confs=["tools.cmake.cmaketoolchain:extra_variables"]']
+            if profile is None:
+                command += ["-s:h", "compiler.runtime=static"]
         if no_remote:
             command.append("--no-remote")
         subprocess.run(command, cwd=root, env=env, check=True)

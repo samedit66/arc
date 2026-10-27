@@ -3,10 +3,10 @@
 ## Supported code and retained metadata
 
 The wrapper contains POSIX and Windows/MSVC implementations in the same header.
-Gobo/macOS ARM64 remains the verified combination. Windows code is implemented
-but has not been compiled or executed on a Windows host. Linux native compilation
-and EiffelStudio are not verified. Retained profile/metadata tests are not native
-Windows verification.
+The CI matrix compiles and runs the same tests with Gobo and EiffelStudio on
+Ubuntu x86_64/glibc, macOS ARM64 and Windows x86_64/MSVC. Check all six job results
+before claiming a verified port. Gobo/macOS ARM64 is also verified locally;
+Linux/musl release builds are outside this matrix.
 
 The ECF retains EiffelStudio/EiffelBase and Gobo/FreeELKS selection. Library clients
 need a compatible Eiffel compiler and C toolchain; the library target imports no CLI.
@@ -42,7 +42,11 @@ replaces `build/native` only after successful staging, restoring the previous
 deployment if the swap fails. Separate host/build profiles are accepted with
 `--profile` and `--build-profile`. Windows host dependencies use static CRT.
 Linux libc is detected natively; `--libc` asserts the expected environment rather
-than changing a glibc compiler into a musl cross-toolchain. The result includes
+than changing a glibc compiler into a musl cross-toolchain.
+
+On Windows, a generated CMake hook lets libarchive find Conan’s `zstd_static.lib`;
+the hook configuration contributes to the package ID, preventing reuse of a
+libarchive binary built without the required Zstd support. The result includes
 `native.ecf`, `manifest.json`, licenses and `full_deploy/host`.
 
 Do not hand-edit generated native ECF, build outputs, EIFGENs or `.gobo`.
@@ -124,7 +128,7 @@ The Windows native ECF propagates the profile's `/MT` (or `/MTd` for a debug lib
 The native suite rebuilds all four probes, runs profile fixtures in fresh
 directories, and runs `check_cli.py` with the explicit executable. Metadata tests
 cover imports, ABI/libc names, library-only packaging and failed preparation.
-Windows-specific native cases remain pending a real Windows run.
+Windows jobs also run the platform-specific native cases.
 
 ```sh
 # Prepared library, no CLI submodule required:
@@ -176,9 +180,8 @@ Relocation tests compile and execute a consumer, or run CLI integration from the
 extracted application, in a path with spaces and Unicode. The current Gobo gecc
 mangles Unicode include paths on macOS, and its script launcher fails with spaces;
 the POSIX application builder and consumer test therefore use `gec --cc=no` and runs the generated script
-directly with `sh -e`. No generated file is hand-edited. Windows uses the native
-compiler driver and still requires actual Windows verification. EiffelStudio is
-not claimed as tested.
+directly with `sh -e`. No generated file is hand-edited. Windows uses the native compiler driver. Relocation checks remain separate from
+the six-way compile/test matrix.
 
 ## Windows validation
 
@@ -199,14 +202,14 @@ must be tested separately before claiming those capabilities.
 
 Standalone system diagnostics retain positive errno or negative original Win32
 codes, with UTF-8 messages and separate cleanup errors. Libarchive diagnostics
-retain libarchive's own status/code/message. No Windows success claim should be
-made until native builds, all profile round trips, AES, link/name policies,
-cleanup and relocated consumer/CLI tests pass on Windows.
+retain libarchive's own status/code/message. Check Windows build, profile, AES, link/name-policy and cleanup results in CI.
+Relocated consumer/CLI checks and long-path/UNC behavior require separate Windows
+verification.
 
 ## Continuous integration
 
 GitHub Actions builds the CLI and all four assertion-enabled probes on Ubuntu
-24.04, macOS 15 Intel and Windows Server 2022, with Gobo 26.06 and EiffelStudio
+24.04, macOS 15 ARM64 and Windows Server 2022, with Gobo 26.06 and EiffelStudio
 25.12. Both compilers run the same eight-format, CLI, password and cleanup checks;
 packaging contracts run in every job. Failures in one combination do not cancel
 other combinations. Windows enables symlink creation and uses MSVC with static CRT.

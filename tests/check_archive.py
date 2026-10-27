@@ -58,7 +58,6 @@ def build_and_check(root, compiler="ge"):
                             "-target", target, "-project_path", str(project),
                             "-finalize", "-keep", "-c_compile"], cwd=root, env=env, check=True)
             shutil.copy2(project / "EIFGENs" / target / "F_code" / (name + suffix), root / (name + suffix))
-    suffix = ".exe" if os.name == "nt" else ""
 
     def run(name, arguments, directory):
         """Run a fresh assertion-enabled probe and retain failure diagnostics."""
