@@ -225,3 +225,7 @@ macOS uses EiffelStudio’s headless `ecb` compiler, avoiding GTK/X11 dependenci
 EiffelStudio uses generated ECF copies in `build/ci`, leaving source configurations
 unchanged, and finalizes with `-keep` to preserve probe assertions. CI uses Linux
 glibc to test portability; it does not certify fully static musl releases.
+
+ZIP creation explicitly selects UTF-8 header names on every platform, including
+Windows where libarchive otherwise defaults to CP437. The profile suite checks
+the Unicode entry name with Python’s independent ZIP reader.

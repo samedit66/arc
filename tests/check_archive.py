@@ -68,6 +68,8 @@ def build_and_check(root, compiler="ge"):
     with tempfile.TemporaryDirectory(prefix="arc-profiles-") as temporary:
         directory = Path(temporary).resolve()
         run("arc_demo", [], directory)
+        with zipfile.ZipFile(directory / "example.zip") as archive:
+            assert archive.getinfo("docs/пример.txt").file_size == 0
         for profile in profiles:
             work = directory / ("checks-" + profile)
             work.mkdir()

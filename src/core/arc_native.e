@@ -533,7 +533,7 @@ feature {NONE} -- C ABI result functions
 		external
 			"C inline use <libarchive_wrapper.h>"
 		alias
-			"int r = archive_write_set_format_zip($handle); if (r == ARCHIVE_OK) r = archive_write_set_format_option($handle, %"zip%", %"compression%", %"deflate%"); return r;"
+			"LIBARCHIVE_WRAPPER_ENTER($handle, return ARCHIVE_FATAL); int r = archive_write_set_format_zip($handle); if (r == ARCHIVE_OK) r = archive_write_set_format_option($handle, %"zip%", %"hdrcharset%", %"UTF-8%"); if (r == ARCHIVE_OK) r = archive_write_set_format_option($handle, %"zip%", %"compression%", %"deflate%"); LIBARCHIVE_WRAPPER_LEAVE(); return r;"
 		end
 
 	c_write_open (handle: POINTER; descriptor: INTEGER): INTEGER
