@@ -77,6 +77,10 @@ def check_pack_and_unpack(executable):
             assert "Progress:" in created.stderr
             assert "100%" in created.stderr and "█" in created.stderr
             assert "\x1b[2K" in created.stderr and "\x1b" not in created.stdout
+            if profile == "tar":
+                with tarfile.open(archive) as packed:
+                    target = packed.getmember("dangling").linkname
+                    assert target == "absent-🙂.txt", ("packed link", profile, target)
             listing = run(executable, root, "list", archive).stdout
             assert "nested/large.txt\n" in listing and source.name not in listing
             run(executable, root, "verify", archive)
@@ -104,7 +108,8 @@ def check_pack_and_unpack(executable):
             assert (destination / "nested/empty.txt").read_bytes() == b""
             assert (destination / "empty").is_dir()
             assert os.readlink(destination / "link") == "nested"
-            assert os.readlink(destination / "dangling") == "absent-🙂.txt"
+            target = os.readlink(destination / "dangling")
+            assert target == "absent-🙂.txt", ("restored link", profile, target)
             run(executable, root, "unpack", archive, ok=False)
             shutil.rmtree(destination)
         kept = root / "kept.zip"
