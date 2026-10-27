@@ -33,7 +33,7 @@ arc pack --password secret protected.zip ./src
 arc unpack --password secret protected.zip
 ```
 
-Add `--progress` to packing or unpacking to see file transfers.
+Add `--progress` to packing or unpacking for a per-file progress bar on stderr. Unknown file sizes use a spinner and byte counter.
 
 Creation formats: `tar`, `tar.gz`, `tar.bz2`, `tar.xz`, `tar.zst`, `tar.lz4`, `zip` and `7z`. Arc normally chooses the format from the filename; use `--format` to override it.
 
@@ -105,6 +105,8 @@ Choose a package matching your OS, architecture and compiler. Windows packages u
 To use prepared dependencies directly from the checkout, select `ARC_NATIVE_MODE=conan` in your project configuration.
 
 ### Application with Conan libarchive
+
+The application depends on the [cli](https://github.com/samedit66/cli) and [progress_bar](https://github.com/Eiffel-Workshop/progress_bar) packages.
 
 Initialize the CLI submodule, prepare dependencies and build:
 

@@ -27,7 +27,7 @@ feature -- Interface definition
 					{ARC_FORMATS}.Tar_lz4, {ARC_FORMATS}.Zip, {ARC_FORMATS}.Seven_zip>>,
 				Case_sensitive, "")
 			add_flag ("keep-root", "Retain the name of a single source directory")
-			add_flag ("progress", "Print successful per-file byte transfers to stderr")
+			add_flag ("progress", "Show per-file progress on stderr")
 			add_optional_string_option ("password", "Archive password", "")
 			add_string_argument ("archive", "Archive path")
 			add_optional_string_list_argument ("source", "Sources; default to the archive basename directory", {ARRAY [STRING_32]} << >>)
@@ -46,7 +46,7 @@ feature -- Execution
 			profile, inferred: STRING_8
 			output, source_path: PATH
 			keep_root, implicit_source: BOOLEAN
-			progress: detachable PROCEDURE [TUPLE [name: IMMUTABLE_STRING_32; written, total: NATURAL_64]]
+			display: detachable ARC_ENTRY_DISPLAY
 		do
 			archive_name := input.string_parameter ("archive")
 			if archive_name.is_empty then
@@ -119,9 +119,9 @@ feature -- Execution
 				create writer.make_open_write_with_password (output, profile, input.string_parameter ("password"))
 			end
 			if input.boolean_parameter ("progress") then
-				progress := agent show_progress
+				create display.make_progress
+				writer.set_progress (agent display.update_progress)
 			end
-			writer.set_progress (progress)
 			across registrations as source loop
 				if not writer.has_failed then
 					writer.add_path (source.path, source.stored_name)
@@ -140,14 +140,6 @@ feature -- Execution
 			if attached writer as active_writer then
 				active_writer.abort
 			end
-		end
-
-feature {NONE} -- Progress
-
-	show_progress (entry_name: IMMUTABLE_STRING_32; written, total: NATURAL_64)
-			-- Present successful per-file byte transfers on stderr.
-		do
-			{ARC_ENTRY_DISPLAY}.put_pack_progress (entry_name, written, total)
 		end
 
 end

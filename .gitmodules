@@ -1,3 +1,6 @@
 [submodule "vendor/cli"]
 	path = vendor/cli
 	url = https://github.com/samedit66/cli.git
+[submodule "vendor/progress_bar"]
+	path = vendor/progress_bar
+	url = https://github.com/Eiffel-Workshop/progress_bar.git

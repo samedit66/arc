@@ -97,6 +97,7 @@
         <setting name="console_application" value="true"/>
         <setting name="executable_name" value="arc"/>
         <library name="cli_library" location="vendor/cli/cli.ecf"/>
+        <library name="progress_bar" location="vendor/progress_bar/progress_bar.ecf"/>
         <cluster name="presentation" location="src/cli/presentation" recursive="false"/>
         <cluster name="cli" location="src/cli" recursive="false"/>
     </target>

@@ -96,7 +96,8 @@ def build_application(root: Path) -> Path:
     settings = manifest["settings"]
     if settings["build_type"] != "Release":
         raise SystemExit("Application distribution requires Release native dependencies")
-    if not (root / "vendor/cli/cli.ecf").is_file():
+    if not all((root / path).is_file() for path in
+               ("vendor/cli/cli.ecf", "vendor/progress_bar/progress_bar.ecf")):
         raise SystemExit("Run git submodule update --init --recursive before building the CLI")
     if settings["os"] == "Windows" and settings.get("compiler.runtime") != "static":
         raise SystemExit("Prepare Windows dependencies with compiler.runtime=static (/MT)")

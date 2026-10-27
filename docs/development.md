@@ -46,6 +46,11 @@ than changing a glibc compiler into a musl cross-toolchain. The result includes
 `native.ecf`, `manifest.json`, licenses and `full_deploy/host`.
 
 Do not hand-edit generated native ECF, build outputs, EIFGENs or `.gobo`.
+The CLI uses the pinned `vendor/progress_bar` submodule for single-row Unicode bars
+on stderr. Known file sizes show percentages; unknown sizes show a spinner and
+byte counter. Rendering uses ANSI cursor controls and leaves stdout unchanged.
+The progress library is Apache-2.0 licensed; application packages include its license.
+
 The pinned CLI parser stays a Git submodule; do not edit its source or revision
 for this migration.
 

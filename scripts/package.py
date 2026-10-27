@@ -116,6 +116,9 @@ def create_package(root: str | Path, kind: str = "library", binary: Path | None 
             "Arc application\n\nCopy the executable to a directory on PATH.\n"
             "Eiffel, Python and Conan are not required to run it.\n"
             "See manifest.json for the native platform and dependency versions.\n", encoding="utf-8")
+        progress_license = destination / "licenses/progress_bar/LICENSE"
+        progress_license.parent.mkdir(parents=True)
+        shutil.copy2(root / "vendor/progress_bar/LICENSE", progress_license)
         host = native / "full_deploy/host"
         for licenses in host.rglob("licenses"):
             if licenses.is_dir():

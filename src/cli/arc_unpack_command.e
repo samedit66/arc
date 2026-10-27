@@ -21,7 +21,7 @@ feature -- Interface definition
 	interface
 			-- Declare archive selection and optional byte progress.
 		do
-			add_flag ("progress", "Print successful per-file byte transfers to stderr")
+			add_flag ("progress", "Show per-file progress on stderr")
 			add_optional_string_option ("password", "Archive password", "")
 			add_string_argument ("archive", "Archive path")
 		end
@@ -34,6 +34,7 @@ feature -- Execution
 			reader: ARC_ARCHIVE
 			archive_path, destination: PATH
 			archive_name: STRING_32
+			display: ARC_ENTRY_DISPLAY
 		do
 			archive_name := input.string_parameter ("archive")
 			if archive_name.is_empty then
@@ -55,7 +56,8 @@ feature -- Execution
 				fail ({ARC_ENTRY_DISPLAY}.failure_message ("unpack", archive_path, reader.last_error), 1)
 			end
 			if input.boolean_parameter ("progress") then
-				reader.set_progress (agent show_progress)
+				create display.make_progress
+				reader.set_progress (agent display.update_progress)
 			end
 			reader.extract_all (destination)
 			if attached reader.extraction_directory as physical_path then
@@ -94,14 +96,6 @@ feature {NONE} -- Destination policy
 			end
 		ensure
 			instance_free: class
-		end
-
-feature {NONE} -- Progress
-
-	show_progress (entry_name: IMMUTABLE_STRING_32; written, total: NATURAL_64)
-			-- Present successful per-file byte transfers on stderr.
-		do
-			{ARC_ENTRY_DISPLAY}.put_unpack_progress (entry_name, written, total)
 		end
 
 end

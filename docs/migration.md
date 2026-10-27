@@ -142,3 +142,9 @@ consumers of the prepared library need Eiffel/C compilers, and application users
 need only the executable and permitted OS components. Windows/MSVC and Linux/musl
 build paths remain unverified on native hosts. macOS relocation with Unicode uses
 the generated Gobo C script explicitly due to the current compiler-driver limitation.
+
+## CLI progress display
+
+`pack --progress` and `unpack --progress` now render a single-row Unicode bar on
+stderr using the pinned `progress_bar` submodule. Progress is per file; unknown
+sizes use a spinner and byte counter. Initialize submodules before building.

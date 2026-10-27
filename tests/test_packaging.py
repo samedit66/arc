@@ -115,6 +115,8 @@ class PackageTests(unittest.TestCase):
         (root / "src/cli/arc_cli.e").write_bytes(b"CLI source fixture")
         (root / "src/cli/presentation").mkdir()
         (root / "src/cli/presentation/arc_entry_display.e").write_bytes(b"Presentation fixture")
+        (root / "vendor/progress_bar").mkdir(parents=True)
+        (root / "vendor/progress_bar/LICENSE").write_text("Progress bar license fixture\n")
         (root / "vendor/cli/src").mkdir(parents=True)
         (root / "vendor/cli/.git").write_text("gitdir: ../../.git/modules/vendor/cli\n")
         (root / "vendor/cli/cli.ecf").write_text("<fixture/>\n")
@@ -179,6 +181,7 @@ class PackageTests(unittest.TestCase):
                 self.assertEqual(package.read("arc/arc"), b"executable fixture")
                 self.assertIn("arc/manifest.json", package.namelist())
                 self.assertTrue(any(name.endswith("licenses/LICENSE") for name in package.namelist()))
+                self.assertIn("arc/licenses/progress_bar/LICENSE", package.namelist())
                 self.assertFalse(any(name.startswith(("arc/src/", "arc/build/", "arc/vendor/"))
                                      for name in package.namelist()))
 

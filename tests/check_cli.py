@@ -75,6 +75,8 @@ def check_pack_and_unpack(executable):
             created = run(executable, root, "pack", "--progress", archive, source)
             assert created.stdout == f"Created {archive}\n"
             assert "Progress:" in created.stderr
+            assert "100%" in created.stderr and "█" in created.stderr
+            assert "\x1b[2K" in created.stderr and "\x1b" not in created.stdout
             listing = run(executable, root, "list", archive).stdout
             assert "nested/large.txt\n" in listing and source.name not in listing
             run(executable, root, "verify", archive)
@@ -93,6 +95,8 @@ def check_pack_and_unpack(executable):
             destination = root / "roundtrip"
             assert extracted.stdout == f"Extracted to {destination}\n"
             assert "Progress:" in extracted.stderr
+            assert "100%" in extracted.stderr and "█" in extracted.stderr
+            assert "\x1b[2K" in extracted.stderr and "\x1b" not in extracted.stdout
             assert (destination / "data.txt").read_bytes() == b"payload"
             assert (destination / "nested/large.txt").read_bytes() == b"x" * 200000
             assert (destination / "nested/empty.txt").read_bytes() == b""

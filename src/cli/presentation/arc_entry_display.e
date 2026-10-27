@@ -1,9 +1,29 @@
 note
-	description: "Terminal-safe archive pathname rendering shared by list presentations."
+	description: "Terminal-safe archive presentation and single-row byte progress on stderr."
 	author: "samedit66"
 	email: "samedit66@yandex.ru"
 
 class ARC_ENTRY_DISPLAY
+
+inherit
+	PB_DISPLAY
+		rename
+			make as make_display,
+			put_line as put_progress_line
+		redefine
+			emit
+		end
+
+create
+	make_progress
+
+feature {NONE} -- Initialization
+
+	make_progress
+			-- Create a single-row progress display writing UTF-8 to stderr.
+		do
+			make_display
+		end
 
 feature -- Formatting
 
@@ -125,27 +145,84 @@ feature -- Formatting
 			instance_free: class
 		end
 
-	put_pack_progress (entry_name: IMMUTABLE_STRING_32; written, total: NATURAL_64)
-			-- Print terminal-safe per-file packing bytes and declared total to stderr.
+feature -- Progress
+
+	update_progress (entry_name: IMMUTABLE_STRING_32; written, total: NATURAL_64)
+			-- Show transferred bytes for the current file, with a spinner when its size is unknown.
+		local
+			current_bar: PB_PROGRESS_BAR
+			formatter: PB_FORMATTER
+			count, step: INTEGER_64
+			label: STRING_32
+		do
+			count := written.min ({INTEGER_64}.max_value.to_natural_64).to_integer_64
+			if not attached progress_name as previous or else not previous.same_string (entry_name) or else
+				written < last_written or else total /= last_total
+			then
+				make_display
+				if total > 0 and total <= {INTEGER_64}.max_value.to_natural_64 then
+					create current_bar.make_with_total (total.to_integer_64)
+				else
+					create current_bar.make_unknown
+				end
+				formatter := {PB_FORMATTER_PRESETS}.unicode
+				formatter.set_width (24)
+				formatter.set_show_timing (False)
+				formatter.set_show_count (True)
+				current_bar.set_formatter (formatter)
+				progress_bar := current_bar
+				progress_name := entry_name
+				last_step := -1
+				extend (current_bar)
+			end
+
+			last_written := written
+			last_total := total
+
+			check attached progress_bar as bar then
+				bar.set_absolute_progress (count.min (bar.progress_limit))
+				if bar.has_total then
+					step := bar.progress_percentage
+				else
+					step := count // 65536
+				end
+				if step /= last_step then
+					label := escaped (entry_name)
+					if label.count > 32 then
+						label.keep_head (29)
+						label.append ("...")
+					end
+					bar.set_description ({STRING_32} "Progress: " + label + " (bytes)")
+					bar.render
+					last_step := step
+				end
+			end
+		end
+
+feature {NONE} -- Progress output
+
+	emit (text: READABLE_STRING_GENERAL)
+			-- Write the library's terminal rendering to stderr without touching stdout.
 		local
 			converter: UTF_CONVERTER
 		do
-			io.error.put_string (converter.utf_32_string_to_utf_8_string_8 (
-				{STRING_32} "Progress: " + escaped (entry_name) + ": " + written.out + "/" + total.out + " bytes%N"))
-		ensure
-			instance_free: class
+			io.error.put_string (converter.utf_32_string_to_utf_8_string_8 (text.as_string_32))
+			io.error.flush
 		end
 
-	put_unpack_progress (entry_name: IMMUTABLE_STRING_32; written, total: NATURAL_64)
-			-- Print terminal-safe per-file extraction bytes to stderr.
-		local
-			converter: UTF_CONVERTER
-		do
-			io.error.put_string (converter.utf_32_string_to_utf_8_string_8 (
-				{STRING_32} "Progress: " + escaped (entry_name) + ": " + written.out + " bytes%N"))
-		ensure
-			instance_free: class
-		end
+	progress_bar: detachable PB_PROGRESS_BAR
+			-- Current file's progress bar.
 
+	progress_name: detachable IMMUTABLE_STRING_32
+			-- Current file's immutable archive name.
+
+	last_written: NATURAL_64
+			-- Previous callback byte count, used to recognize repeated entry names.
+
+	last_total: NATURAL_64
+			-- Previous callback declared size.
+
+	last_step: INTEGER_64
+			-- Last rendered percentage or unknown-size block.
 
 end
