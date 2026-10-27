@@ -1,5 +1,5 @@
 note
-	description: "Archive extraction command using the library API."
+	description: "Validated POSIX archive extraction through the ARC block reader."
 	author: "samedit66"
 	email: "samedit66@yandex.ru"
 
@@ -11,51 +11,97 @@ inherit
 feature -- Definition
 
 	name: STRING_32 = "unpack"
-			-- Command name required by the inherited CLI interface.
+			-- Inherited CLI command name.
 
 	description: STRING_32 = "Extract an archive"
-			-- Command summary displayed in application help.
+			-- Application help summary.
 
 feature -- Interface definition
 
 	interface
-			-- Declare the options and positional arguments accepted by this command.
+			-- Declare archive selection and optional byte progress.
 		do
+			add_flag ("progress", "Print successful per-file byte transfers to stderr")
 			add_optional_string_option ("password", "Archive password", "")
 			add_string_argument ("archive", "Archive path")
 		end
 
 feature -- Execution
 
-	handle (a_input: CLI_COMMAND_INPUT)
-			-- Extract beside the source; report operation failures with exit status 1.
+	handle (input: CLI_COMMAND_INPUT)
+			-- Restore entries in a new sibling directory after validating original POSIX names.
 		local
-			archive: ARCHIVE_READER
-			options: UNPACK_OPTIONS
-			archive_name, password, diagnostic: STRING_32
-			display: ARC_ENTRY_DISPLAY
-			failure: ARCHIVE_ERROR
+			reader: ARC_ARCHIVE
+			archive_path, destination: PATH
+			archive_name: STRING_32
 		do
-			archive_name := a_input.string_parameter ("archive")
+			archive_name := input.string_parameter ("archive")
 			if archive_name.is_empty then
 				fail ("Archive path must not be empty", Invalid_call)
 			end
-
-			create archive.make_with_name (archive_name)
-			create display
-			create options.make
-			password := a_input.string_parameter ("password")
-			if not password.is_empty then
-				options.set_password (password)
+			archive_path := (create {PATH}.make_from_string (archive_name)).absolute_path
+			if attached archive_path.entry as entry then
+				destination := archive_path.parent.extended (unpack_name (entry.name)).canonical_path
+			else
+				destination := archive_path.parent.extended ("archive.unpacked")
 			end
-
-			archive.unpack_with_options (options)
-
-			if not archive.is_successful then
-				failure := archive.last_error
-				diagnostic := display.failure_message ("unpack", archive.path, failure)
-				fail (diagnostic, 1)
+			if input.string_parameter ("password").is_empty then
+				create reader.make_open_read (archive_path)
+			else
+				create reader.make_open_read_with_password (archive_path, input.string_parameter ("password"))
 			end
+			if reader.has_failed then
+				reader.close
+				fail ({ARC_ENTRY_DISPLAY}.failure_message ("unpack", archive_path, reader.last_error), 1)
+			end
+			if input.boolean_parameter ("progress") then
+				reader.set_progress (agent show_progress)
+			end
+			reader.extract_all (destination)
+			if attached reader.extraction_directory as physical_path then
+				destination := physical_path
+			end
+			reader.close
+			if reader.has_failed then
+				fail ({ARC_ENTRY_DISPLAY}.failure_message ("unpack", archive_path, reader.last_error), 1)
+			end
+			{ARC_ENTRY_DISPLAY}.put_line ({STRING_32} "Extracted to " + {ARC_ENTRY_DISPLAY}.escaped (destination.name))
+		rescue
+			if attached reader as active_reader then
+				active_reader.close
+			end
+		end
+
+feature {NONE} -- Destination policy
+
+	unpack_name (filename: READABLE_STRING_32): STRING_32
+			-- Destination basename with a recognized read suffix removed, or `.unpacked' appended.
+		local
+			suffix, lower: STRING_32
+		do
+			Result := filename.to_string_32.twin
+			lower := Result.as_lower
+			suffix := {ARC_FORMATS}.output_suffix (filename)
+			across <<".rar", ".cpio", ".xar", ".iso">> as candidate loop
+				if lower.ends_with (candidate) and candidate.count > suffix.count then
+					suffix := candidate.to_string_32
+				end
+			end
+			if not suffix.is_empty and Result.count > suffix.count then
+				Result.keep_head (Result.count - suffix.count)
+			else
+				Result.append_string_general (".unpacked")
+			end
+		ensure
+			instance_free: class
+		end
+
+feature {NONE} -- Progress
+
+	show_progress (entry_name: IMMUTABLE_STRING_32; written, total: NATURAL_64)
+			-- Present successful per-file byte transfers on stderr.
+		do
+			{ARC_ENTRY_DISPLAY}.put_unpack_progress (entry_name, written, total)
 		end
 
 end

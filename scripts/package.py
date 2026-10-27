@@ -19,6 +19,8 @@ def create_package(root: str | Path) -> Path:
     filesystem and malformed-input errors propagate to the caller.
     """
     root = Path(root).resolve()
+    if not (root / "vendor/cli/cli.ecf").is_file():
+        raise SystemExit("Run git submodule update --init --recursive before packaging.")
     native = root / "build/native"
     if not (native / "manifest.json").is_file() or not (native / "native.ecf").is_file():
         raise SystemExit("Run mise run prepare before packaging.")
@@ -44,7 +46,8 @@ def create_package(root: str | Path) -> Path:
     shutil.copy2(root / "arc.ecf", destination / "arc.ecf")
     shutil.copytree(root / "src", destination / "src")
     shutil.copytree(root / "docs", destination / "docs")
-    shutil.copytree(root / "vendor/cli", destination / "vendor/cli")
+    shutil.copytree(root / "vendor/cli", destination / "vendor/cli",
+                    ignore=shutil.ignore_patterns(".git"))
     deployed = destination / "build/native"
     deployed.mkdir(parents=True)
     for filename in ("native.ecf", "manifest.json"):

@@ -1,275 +1,268 @@
-"""Exercise explicitly supplied Arc executables in empty directories."""
+"""Exercise the current CLI against explicitly supplied rebuilt executables."""
 
 from pathlib import Path
+import io
+import os
 import shutil
 import subprocess
 import sys
-import tempfile
-import zipfile
 import tarfile
-import os
+import tempfile
+import warnings
+import zipfile
+
+PROFILES = ("tar", "tar.gz", "tar.bz2", "tar.xz", "tar.zst", "tar.lz4", "zip", "7z")
 
 
-COMMANDS = ("pack", "unpack", "list", "info", "verify")
-SECRET = "private-password-value"
+def run(executable, root, *arguments, ok=True):
+    """Run one CLI command and require the selected success/failure outcome."""
+    result = subprocess.run([str(executable), *map(str, arguments)], cwd=root,
+                            capture_output=True, text=True, timeout=30,
+                            env=dict(os.environ, LC_ALL="C", LANG="C"))
+    assert (result.returncode == 0) == ok, (arguments, result)
+    if not ok:
+        assert result.stderr and not result.stdout, (arguments, result)
+    return result
 
 
-def cases():
-    yield [], 0, "Usage:"
-    yield ["help"], 2, ""
-    yield ["help", "version"], 2, ""
-    yield ["version"], 2, ""
-    yield ["--version"], 0, "libarchive version number:"
-    yield ["--help"], 0, "Commands:"
-    yield ["-h"], 0, "Commands:"
-    yield ["--version", "--help"], 0, "Commands:"
-    yield ["--help", "--version"], 0, "Commands:"
-    yield ["--help"], 0, "--version"
-    for arguments in (["unknown"], ["--version=yes"], ["--version", "--version"],
-                      ["--version", "pack", "a"], ["--help", "pack"],
-                      ["version", "pack", "a"], ["version", "extra"],
-                      ["help", "unknown"], ["help", "pack", "extra"]):
-        yield arguments, 2, ""
-    for command in COMMANDS:
-        operation_status = 2 if command == "pack" else 1
-        yield ["help", command], 2, ""
-        yield [command, "--help"], 0, "--password"
-        yield [command, "--help"], 0, f"arc {command}"
-        yield [command, "-h"], 0, f"arc {command}"
-        yield [command, "a", "--help"], 0, f"arc {command}"
-        yield [command, "--help", "--unknown"], 0, f"arc {command}"
-        yield [command, "--unknown", "--help"], 2, "Unknown option"
-        yield [command, "--password", "--help"], 2, ""
-        yield [command, "--password=--help", "a"], operation_status, ""
-        for operands in (["a"], ["несуществующий архив.arc"], ["--", "-archive"]):
-            yield [command, *operands], operation_status, ""
-        for option in (["--password", SECRET], [f"--password={SECRET}"],
-                       ["--password="], ["--password", ""], ["--password=a=b"]):
-            yield [command, *option, "a"], operation_status, ""
-        yield [command, "a", "--password", SECRET], operation_status, ""
-        for arguments in ([], ["--password"], ["--unknown", SECRET],
-                          ["--password", SECRET, "--password", SECRET, "a"],
-                          ["--version", "a"], ["--help=yes"]):
-            yield [command, *arguments], 2, ""
-        if command != "pack":
-            yield [command, "a", "a"], 2, "Unexpected argument"
-    for command, flag in (("pack", "keep-root"), ("list", "tree")):
-        yield [command, f"--{flag}", "a"], 1 if command == "list" else 2, ""
-        yield [command, "a", f"--{flag}"], 1 if command == "list" else 2, ""
-        yield [command, f"--{flag}", f"--{flag}", "a"], 2, "Repeated parameter"
-        yield [command, f"--{flag}=yes", "a"], 2, "Flag does not accept a value"
-    for arguments in (["--format", "zip"], ["--format=zip"], ["--format="]):
-        yield ["pack", *arguments, "a", "source"], 2 if arguments == ["--format="] else 1, ""
-    yield ["pack", "--format", "zip", "--format", "tar", "a"], 2, "Repeated parameter"
-    yield ["unpack", "--entry", "one", "a"], 2, "Unknown option"
-    yield ["unpack", "a", "--strip-root"], 2, "Unknown option"
-    yield ["unpack", ""], 2, "Archive path must not be empty"
-    yield ["info", ""], 2, "Archive path must not be empty"
-    yield ["pack", "a", "--", "--help", "--keep-root"], 2, ""
-    yield ["list", "--", "--password=secret"], 1, ""
+def check_read_commands(executable):
+    """Keep listing lossless and terminal-safe and inspect/verify without extraction."""
+    with tempfile.TemporaryDirectory(prefix="arc-read-cli-") as temporary:
+        root = Path(temporary).resolve()
+        archive = root / "данные.zip"
+        names = ["dir/данные-😀.txt", "empty/", "line\n\x1b[31m.txt", "../outside",
+                 "/absolute", "same", "same", "same/child"]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            with zipfile.ZipFile(archive, "w") as output:
+                for name in names:
+                    output.writestr(name, b"" if name.endswith("/") else b"payload")
+        before = set(root.iterdir())
+        flat = run(executable, root, "list", archive).stdout
+        assert flat.count("same\n") == 2 and "dir/данные-😀.txt\n" in flat
+        assert "\x1b" not in flat and "line\n" not in flat and "\\u{" in flat
+        assert "../outside\n" in flat and "/absolute\n" in flat
+        tree = run(executable, root, "list", "--tree", archive).stdout
+        assert tree.startswith(".\n") and tree.count("[file] same\n") == 2
+        assert "[directory] empty/\n" in tree and "[file] same/child\n" in tree
+        assert set(root.iterdir()) == before
+        for command in ("info", "verify"):
+            result = run(executable, root, command, archive)
+            assert result.stdout
+            assert set(root.iterdir()) == before
+        broken = root / "broken.zip"
+        broken.write_bytes(b"not an archive")
+        run(executable, root, "list", broken, ok=False)
+        run(executable, root, "unpack", broken, ok=False)
+        assert not (root / "broken").exists()
 
 
-def check_unpack(executable):
-    count = 0
-    for password in (None, "", "пароль-test"):
-        with tempfile.TemporaryDirectory(prefix="arc-cli-unpack-") as directory:
-            root = Path(directory)
-            archive = root / "проект.zip"
-            if password:
-                (root / "data.txt").write_bytes(b"payload")
-                subprocess.run([shutil.which("zip") or "zip", "-q", "-P", password,
-                                str(archive), "data.txt"], cwd=root, check=True)
-                (root / "data.txt").unlink()
-            else:
-                with zipfile.ZipFile(archive, "w") as output:
-                    output.writestr("data.txt", b"payload")
-            for unsupported in (["--strip-root"], ["--entry=data.txt"], ["destination"]):
-                rejected = subprocess.run([str(executable), "unpack", archive.name, *unsupported],
-                                          cwd=root, capture_output=True, timeout=10)
-                assert rejected.returncode == 2 and rejected.stderr and not rejected.stdout, rejected
-                assert set(root.iterdir()) == {archive}
-                count += 1
-            if password:
-                for args in ([], ["--password", "wrong-password"]):
-                    failed = subprocess.run([str(executable), "unpack", *args, archive.name],
-                                            cwd=root, capture_output=True, timeout=10)
-                    assert failed.returncode == 1 and failed.stderr and not failed.stdout, failed
-                    assert password.encode() not in failed.stderr
-                    shutil.rmtree(root / "проект")
-                    count += 1
-            args = [] if password is None else ["--password", password]
-            result = subprocess.run([str(executable), "unpack", *args, archive.name],
-                                    cwd=root, capture_output=True, timeout=10)
-            assert result.returncode == 0 and not result.stdout and not result.stderr, result
-            assert (root / "проект" / "data.txt").read_bytes() == b"payload"
-            result = subprocess.run([str(executable), "unpack", *args, archive.name],
-                                    cwd=root, capture_output=True, timeout=10)
-            assert result.returncode == 1 and result.stderr and not result.stdout, result
-            assert (root / "проект" / "data.txt").read_bytes() == b"payload"
-            count += 2
-    with tempfile.TemporaryDirectory(prefix="arc-cli-corrupt-") as directory:
-        archive = Path(directory) / "broken.zip"
-        archive.write_bytes(b"not an archive")
-        failed = subprocess.run([str(executable), "unpack", str(archive)], cwd=directory,
-                                capture_output=True, timeout=10)
-        assert failed.returncode == 1 and failed.stderr and not failed.stdout, failed
-        count += 1
-    return count
-
-
-def check_pack(executable):
-    count = 0
-    with tempfile.TemporaryDirectory(prefix="arc-cli-pack-") as directory:
-        root = Path(directory)
+def check_pack_and_unpack(executable):
+    """Round-trip each profile, including physical symlinks, default mapping and progress."""
+    with tempfile.TemporaryDirectory(prefix="arc-cli-") as temporary:
+        root = Path(temporary).resolve()
         source = root / "проект📦"
         source.mkdir()
-        (source / "data.txt").write_bytes(b"payload")
-        (source / ".hidden").write_bytes(b"hidden")
+        (source / "nested").mkdir()
         (source / "empty").mkdir()
-        extra = root / "extra.txt"
-        extra.write_bytes(b"extra")
-        output_dir = root / "output"
-        output_dir.mkdir()
-
-        def run(arguments, status=0):
-            nonlocal count
-            result = subprocess.run([str(executable), "pack", *map(str, arguments)],
-                                    cwd=root, capture_output=True, timeout=30)
-            assert result.returncode == status, (arguments, status, result)
-            if status:
-                assert result.stderr and not result.stdout, result
-            else:
-                assert result.stdout.startswith(b"Created ") and not result.stderr, result
-            count += 1
-            return result
-
-        for index, suffix in enumerate(("zip", "tar", "tar.gz", "tgz", "tar.bz2", "tbz2", "tar.xz", "txz", "tar.zst", "tzst", "7z", "ZIP")):
-            output = output_dir / (f"archive-{index}." + suffix)
-            run([output, source])
-            reader = shutil.which("bsdtar")
-            if reader is None:
-                raise AssertionError("bsdtar is required to independently read packed archives")
-            contents = subprocess.run([reader, "-xOf", str(output), "data.txt"],
-                                      capture_output=True, timeout=30)
-            assert contents.returncode == 0 and contents.stdout == b"payload", contents
-            if suffix.lower() == "zip":
-                with zipfile.ZipFile(output) as archive:
-                    assert set(archive.namelist()) == {"data.txt", ".hidden", "empty/"}
-            previous = output.read_bytes()
-            run([output, source], 1)
-            assert output.read_bytes() == previous
-
-        for arguments, prefix in ((["--keep-root", source], source.name + "/"),
-                                  ([source, extra], source.name + "/"),
-                                  ([source / "data.txt"], "")):
-            output = root / "mapped.zip"
-            run([output, *arguments])
-            with zipfile.ZipFile(output) as archive:
-                assert archive.read(prefix + "data.txt") == b"payload"
-                if extra in arguments:
-                    assert archive.read("extra.txt") == b"extra"
-            output.unlink()
-
-        for argument in (".", "./", source.name + "/."):
-            output = output_dir / "relative.zip"
-            result = subprocess.run([str(executable), "pack", str(output), argument],
-                                    cwd=source if argument in (".", "./") else root,
-                                    capture_output=True, timeout=30)
-            assert result.returncode == 0, result
-            with zipfile.ZipFile(output) as archive:
-                assert archive.read("data.txt") == b"payload"
-            output.unlink()
-            count += 1
-
-        dashed = root / "--help"
-        dashed.write_bytes(b"dash")
-        run(["dashed.zip", "--", dashed.name])
-        with zipfile.ZipFile(root / "dashed.zip") as archive:
-            assert archive.read("--help") == b"dash"
-
-        for keep_root in (False, True):
-            output = output_dir / (source.name + ".tar.gz")
-            run((["--keep-root"] if keep_root else []) + [output])
-            with tarfile.open(output) as archive:
-                assert archive.extractfile((source.name + "/" if keep_root else "") + "data.txt").read() == b"payload"
-            output.unlink()
-
-        for format_name in ("zip", "tar", "7z"):
-            output = root / "explicit.bin"
-            run(["--format", format_name, output, source])
-            verified = subprocess.run([str(executable), "verify", str(output)],
-                                      capture_output=True, timeout=30)
-            assert verified.returncode == 0, verified
-            output.unlink()
-        run(["--format", "tar", root / "explicit.tar.gz", source])
-        assert (root / "explicit.tar.gz").read_bytes().startswith(b"\x1f\x8b")
-
-        result = run(["--format", "unsupported", "bad.zip", source], 1)
-        assert b"Unsupported format" in result.stderr and b"conflicts" not in result.stderr
-
-        for arguments, status in ((["--format", "zip", "bad.tar.gz", source], 2),
-                                  (["--format", "unsupported", "bad.bin", source], 1),
-                                  (["bad.bin", source], 2),
-                                  (["--keep-root", "bad.zip", source, extra], 2),
-                                  (["--keep-root", "bad.zip", extra], 2),
-                                  (["bad.zip", ""], 2),
-                                  (["bad.zip", "missing"], 1),
-                                  (["missing.zip"], 1),
-                                  (["extra.txt.zip"], 1),
-                                  (["--format", "zip", ".zip"], 2),
-                                  (["bad.zip", source / "data.txt", source / "data.txt"], 1),
-                                  (["--password", SECRET, "bad.tar", source], 1)):
-            result = run(arguments, status)
-            assert SECRET.encode() not in result.stderr
-            assert not (root / "bad.zip").exists()
-            assert not (root / "bad.tar").exists()
-            assert not (root / "bad.bin").exists()
-            assert not (root / "bad.tar.gz").exists()
-
-        if os.name != "nt":
-            link = root / "directory-link"
-            link.symlink_to(source.name, target_is_directory=True)
-            dangling = root / "dangling"
-            dangling.symlink_to("missing-target")
-            output = root / "links.tar"
-            run([output, link, dangling])
-            with tarfile.open(output) as archive:
-                assert archive.getmember("directory-link").issym()
-                assert archive.getmember("dangling").linkname == "missing-target"
-            run(["--keep-root", "bad.zip", link], 2)
-
-        output = root / "encrypted.zip"
-        run(["--password", SECRET, output, source])
-        reader = shutil.which("bsdtar")
-        contents = subprocess.run([reader, "--passphrase", SECRET, "-xOf", str(output), "data.txt"],
-                                  capture_output=True, timeout=30)
-        assert contents.returncode == 0 and contents.stdout == b"payload", contents
-        wrong = subprocess.run([str(executable), "verify", "--password", "wrong", str(output)],
-                               capture_output=True, timeout=30)
-        assert wrong.returncode == 1, wrong
-    return count
+        (source / "data.txt").write_bytes(b"payload")
+        (source / "nested/large.txt").write_bytes(b"x" * 200000)
+        (source / "nested/empty.txt").write_bytes(b"")
+        (source / "link").symlink_to("nested")
+        (source / "dangling").symlink_to("absent-🙂.txt")
+        for profile in PROFILES:
+            archive = root / ("roundtrip." + profile)
+            created = run(executable, root, "pack", "--progress", archive, source)
+            assert created.stdout == f"Created {archive}\n"
+            assert "Progress:" in created.stderr
+            listing = run(executable, root, "list", archive).stdout
+            assert "nested/large.txt\n" in listing and source.name not in listing
+            run(executable, root, "verify", archive)
+            report = run(executable, root, "info", archive).stdout
+            assert "Files: 3" in report and "Directories: 2" in report and "Symbolic links: 2" in report, report
+            expected_filter = {"tar.gz": "gzip", "tar.bz2": "bzip2", "tar.xz": "xz",
+                               "tar.zst": "zstd", "tar.lz4": "lz4"}.get(profile)
+            if expected_filter:
+                assert expected_filter in report, report
+            original = archive.read_bytes()
+            run(executable, root, "pack", archive, source, ok=False)
+            assert archive.read_bytes() == original
+            # Use the /var alias to verify that extraction resolves symlink parents.
+            alias = str(archive).replace("/private/var/", "/var/", 1)
+            extracted = run(executable, root, "unpack", "--progress", alias)
+            destination = root / "roundtrip"
+            assert extracted.stdout == f"Extracted to {destination}\n"
+            assert "Progress:" in extracted.stderr
+            assert (destination / "data.txt").read_bytes() == b"payload"
+            assert (destination / "nested/large.txt").read_bytes() == b"x" * 200000
+            assert (destination / "nested/empty.txt").read_bytes() == b""
+            assert (destination / "empty").is_dir()
+            assert os.readlink(destination / "link") == "nested"
+            assert os.readlink(destination / "dangling") == "absent-🙂.txt"
+            run(executable, root, "unpack", archive, ok=False)
+            shutil.rmtree(destination)
+        kept = root / "kept.zip"
+        run(executable, root, "pack", "--keep-root", kept, source)
+        assert source.name + "/nested/large.txt\n" in run(executable, root, "list", kept).stdout
+        dotted = root / "dotted.zip"
+        run(executable, source, "pack", "--keep-root", dotted, ".")
+        assert source.name + "/nested/large.txt\n" in run(executable, root, "list", dotted).stdout
+        run(executable, root, "pack", "missing-source.zip", source, root / "absent", ok=False)
+        assert not (root / "missing-source.zip").exists()
+        implicit = root / "implicit"
+        implicit.mkdir()
+        (implicit / "file").write_bytes(b"implicit")
+        run(executable, root, "pack", "implicit.zip")
+        assert run(executable, root, "list", "implicit.zip").stdout == "file\n"
+        run(executable, root, "pack", "--format", "tar.xz", "explicit.bin", source)
+        assert "data.txt" in run(executable, root, "list", "explicit.bin").stdout
+        run(executable, root, "pack", "--format", "zip", "conflict.tar", source, ok=False)
+        assert not (root / "conflict.tar").exists()
+        help_text = run(executable, root, "pack", "--help").stdout
+        assert "choices:" in help_text
+        for profile in PROFILES:
+            assert f'"{profile}"' in help_text
+        for invalid in ("rar", "ZIP", "формат"):
+            result = run(executable, root, "pack", "--format", invalid,
+                         "invalid.zip", source, ok=False)
+            assert result.returncode == 2 and "expected one of:" in result.stderr
+            assert not (root / "invalid.zip").exists()
+        run(executable, root, "pack", "--format=", "automatic.zip", source)
+        assert "data.txt" in run(executable, root, "list", "automatic.zip").stdout
 
 
-def main():
-    if len(sys.argv) < 2:
-        raise SystemExit("Usage: python tests/check_cli.py EXECUTABLE [EXECUTABLE...]")
-    for name in sys.argv[1:]:
-        executable = Path(name).resolve(strict=True)
-        count = 0
-        for arguments, status, expected in cases():
-            with tempfile.TemporaryDirectory(prefix="arc-cli-") as directory:
-                result = subprocess.run([str(executable), *arguments], cwd=directory,
-                                        capture_output=True, text=True, encoding="utf-8", timeout=10)
-                output = result.stderr if status else result.stdout
-                if (result.returncode != status or (status != 0 and not result.stderr) or (expected not in output if expected else (not status and output != ""))
-                        or (result.stdout if status else result.stderr)
-                        or list(Path(directory).iterdir())):
-                    raise AssertionError((executable, arguments, status, expected, result))
-            count += 1
-        count += check_unpack(executable)
-        count += check_pack(executable)
-        print(f"{executable}: {count} CLI cases passed")
+
+def check_extraction_policy(executable):
+    """Reject traversal and writes through restored links while preserving existing destinations."""
+    with tempfile.TemporaryDirectory(prefix="arc-policy-") as temporary:
+        root = Path(temporary).resolve()
+        for index, name in enumerate(("../escape", "/absolute", "nested/../../escape")):
+            archive = root / f"unsafe-{index}.zip"
+            with zipfile.ZipFile(archive, "w") as output:
+                output.writestr(name, b"bad")
+            result = run(executable, root, "unpack", archive, ok=False)
+            assert "Invalid relative" in result.stderr
+            assert not (root / "escape").exists()
+        outside = root / "outside"
+        outside.mkdir()
+        archive = root / "symlink.tar"
+        with tarfile.open(archive, "w") as output:
+            link = tarfile.TarInfo("link")
+            link.type = tarfile.SYMTYPE
+            link.linkname = "../outside"
+            output.addfile(link)
+            payload = tarfile.TarInfo("link/escape")
+            payload.size = 3
+            output.addfile(payload, io.BytesIO(b"bad"))
+        run(executable, root, "unpack", archive, ok=False)
+        assert not (outside / "escape").exists()
+        (root / "occupied.zip").symlink_to("missing")
+        source = root / "file"
+        source.write_bytes(b"data")
+        run(executable, root, "pack", "occupied.zip", source, ok=False)
+        assert os.readlink(root / "occupied.zip") == "missing"
+
+
+def check_inspection_and_passwords(executable):
+    """Check real payload failures, summaries and AES ZIP using an independent reader."""
+    with tempfile.TemporaryDirectory(prefix="arc-inspection-") as temporary:
+        root = Path(temporary)
+        source = root / "payload.txt"
+        source.write_bytes(b"independent encrypted payload" * 10000)
+        password = "пароль-🙂"
+        protected = root / "protected.zip"
+        run(executable, root, "pack", "--password", password, protected, source)
+        with zipfile.ZipFile(protected) as archive:
+            entry = archive.infolist()[0]
+            assert entry.flag_bits & 1 and entry.compress_type == 99
+            assert b"independent encrypted payload" not in protected.read_bytes()
+        for command in ("info", "list", "verify"):
+            result = run(executable, root, command, "--password", password, protected)
+            if command == "info":
+                assert "Encryption: yes" in result.stdout
+        before = set(root.iterdir())
+        for arguments in ((), ("--password", "wrong")):
+            result = run(executable, root, "verify", *arguments, protected, ok=False)
+            assert password not in result.stderr
+        assert set(root.iterdir()) == before
+        run(executable, root, "unpack", "--password", password, protected)
+        assert (root / "protected/payload.txt").read_bytes() == source.read_bytes()
+        # bsdtar is an independent libarchive consumer and supports WinZip AES.
+        bsdtar = shutil.which("bsdtar") or shutil.which("tar")
+        assert bsdtar, "an independent libarchive tar reader is required"
+        decoded = subprocess.run([bsdtar, "--passphrase", password, "-xOf", str(protected)],
+                                 capture_output=True, timeout=30)
+        assert decoded.returncode == 0 and decoded.stdout == source.read_bytes(), decoded.stderr
+        for profile in PROFILES:
+            if profile != "zip":
+                output = root / ("rejected." + profile)
+                result = run(executable, root, "pack", "--password", password, output, source, ok=False)
+                assert "AES-256" in result.stderr and not output.exists()
+        plain = root / "plain.zip"
+        with zipfile.ZipFile(plain, "w") as archive:
+            archive.writestr("file", b"unique payload for CRC validation")
+        for command in ("list", "info", "verify"):
+            run(executable, root, command, "--password", password, plain)
+        # Headers still list, but fully consuming data must catch the CRC failure.
+        damaged = bytearray(plain.read_bytes())
+        offset = damaged.index(b"unique payload for CRC validation")
+        damaged[offset] ^= 1
+        broken = root / "damaged.zip"
+        broken.write_bytes(damaged)
+        run(executable, root, "list", broken)
+        before = set(root.iterdir())
+        run(executable, root, "verify", broken, ok=False)
+        assert set(root.iterdir()) == before
+        truncated = root / "truncated.tar.gz"
+        with tarfile.open(truncated, "w:gz") as archive:
+            archive.add(source, arcname="file")
+        truncated.write_bytes(truncated.read_bytes()[:40])
+        run(executable, root, "verify", truncated, ok=False)
+        empty = root / "empty.zip"
+        with zipfile.ZipFile(empty, "w"):
+            pass
+        assert "Entries: 0" in run(executable, root, "info", empty).stdout
+        run(executable, root, "verify", empty)
+        linked = root / "links.tar"
+        with tarfile.open(linked, "w") as archive:
+            entry = tarfile.TarInfo("file")
+            entry.size = 3
+            archive.addfile(entry, io.BytesIO(b"abc"))
+            entry = tarfile.TarInfo("hard")
+            entry.type = tarfile.LNKTYPE
+            entry.linkname = "file"
+            archive.addfile(entry)
+            entry = tarfile.TarInfo("symbolic")
+            entry.type = tarfile.SYMTYPE
+            entry.linkname = "file"
+            archive.addfile(entry)
+        report = run(executable, root, "info", linked).stdout
+        for text in ("Files: 1", "Hard links: 1", "Symbolic links: 1", "Declared file bytes: 3"):
+            assert text in report, report
+        run(executable, root, "verify", linked)
+        run(executable, root, "unpack", linked, ok=False)
+
+
+def main(arguments):
+    """Check each supplied executable without using stale or implicitly discovered binaries."""
+    if not arguments:
+        raise SystemExit("usage: check_cli.py EXECUTABLE [EXECUTABLE ...]")
+    for argument in arguments:
+        executable = Path(argument).resolve()
+        with tempfile.TemporaryDirectory(prefix="arc-help-") as temporary:
+            root = Path(temporary)
+            assert "Commands:" in run(executable, root, "--help").stdout
+            assert "libarchive version number:" in run(executable, root, "--version").stdout
+            for command in ("pack", "unpack", "list", "info", "verify"):
+                run(executable, root, command, "--help")
+            run(executable, root, "unknown", ok=False)
+            run(executable, root, "unpack", "", ok=False)
+        check_read_commands(executable)
+        check_pack_and_unpack(executable)
+        check_extraction_policy(executable)
+        check_inspection_and_passwords(executable)
+        print(f"PASS: {executable}: CLI profiles, traversal, links, output ownership, listing, inspection, verification and passwords")
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

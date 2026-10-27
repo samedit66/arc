@@ -1,5 +1,5 @@
 note
-	description: "Declaration of the archive verification command."
+	description: "Complete archive data verification without extraction."
 	author: "samedit66"
 	email: "samedit66@yandex.ru"
 
@@ -13,7 +13,7 @@ feature -- Definition
 	name: STRING_32 = "verify"
 			-- Command name required by the inherited CLI interface.
 
-	description: STRING_32 = "Verify an archive"
+	description: STRING_32 = "Verify archive contents"
 			-- Command summary displayed in application help.
 
 feature -- Interface definition
@@ -27,34 +27,33 @@ feature -- Interface definition
 
 feature -- Execution
 
-	handle (a_input: CLI_COMMAND_INPUT)
-			-- Read all archive contents without extraction; report failures with exit status 1.
+	handle (input: CLI_COMMAND_INPUT)
+			-- Consume every body and report success only after successful closing.
 		local
-			archive: ARCHIVE_READER
-			options: ARCHIVE_READ_OPTIONS
-			archive_name, password, diagnostic: STRING_32
-			display: ARC_ENTRY_DISPLAY
-			failure: ARCHIVE_ERROR
+			reader: ARC_ARCHIVE
+			path: PATH
 		do
-			archive_name := a_input.string_parameter ("archive")
-			if archive_name.is_empty then
+			if input.string_parameter ("archive").is_empty then
 				fail ("Archive path must not be empty", Invalid_call)
 			end
-
-			create archive.make_with_name (archive_name)
-			create display
-			create options.make
-			password := a_input.string_parameter ("password")
-			if not password.is_empty then
-				options.set_password (password)
+			create path.make_from_string (input.string_parameter ("archive"))
+			if input.string_parameter ("password").is_empty then
+				create reader.make_open_read (path)
+			else
+				create reader.make_open_read_with_password (path, input.string_parameter ("password"))
 			end
 
-			archive.verify_with_options (options)
-
-			if not archive.is_successful then
-				failure := archive.last_error
-				diagnostic := display.failure_message ("verify", archive.path, failure)
-				fail (diagnostic, 1)
+			if not reader.has_failed then
+				reader.verify_remaining
+			end
+			reader.close
+			if reader.has_failed then
+				fail ({ARC_ENTRY_DISPLAY}.failure_message ("verify", path, reader.last_error), 1)
+			end
+			{ARC_ENTRY_DISPLAY}.put_line ({STRING_32} "Verified " + {ARC_ENTRY_DISPLAY}.escaped (path.name))
+		rescue
+			if attached reader as active_reader then
+				active_reader.close
 			end
 		end
 

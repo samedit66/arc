@@ -15,17 +15,14 @@
             <condition><custom name="GOBO_EIFFEL" excluded_value="ge"/></condition>
         </library>
         <external_include location="$ECF_CONFIG_PATH/src/core/c"/>
-        <cluster name="core" location="src/core" recursive="false">
-            <cluster name="pack" location="src/core/pack" recursive="false"/>
-            <cluster name="read" location="src/core/read" recursive="false"/>
-            <cluster name="unpack" location="src/core/unpack" recursive="false"/>
-        </cluster>
+        <cluster name="core" location="src/core" recursive="false"/>
     </target>
     <target name="cli" extends="arc">
         <root class="ARC_CLI" feature="make"/>
         <setting name="console_application" value="true"/>
         <setting name="executable_name" value="arc"/>
         <library name="cli_library" location="vendor/cli/cli.ecf"/>
+        <cluster name="presentation" location="src/cli/presentation" recursive="false"/>
         <cluster name="cli" location="src/cli" recursive="false"/>
     </target>
 </system>

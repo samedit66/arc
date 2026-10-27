@@ -1,5 +1,5 @@
 note
-	description: "Declaration of the archive listing command."
+	description: "Sequential flat and tree listings through immutable ARC reader metadata."
 	author: "samedit66"
 	email: "samedit66@yandex.ru"
 
@@ -11,15 +11,15 @@ inherit
 feature -- Definition
 
 	name: STRING_32 = "list"
-			-- Command name required by the inherited CLI interface.
+			-- Inherited CLI command name.
 
 	description: STRING_32 = "List archive entries"
-			-- Command summary displayed in application help.
+			-- Application help summary.
 
 feature -- Interface definition
 
 	interface
-			-- Declare the options and positional arguments accepted by this command.
+			-- Declare flat/tree selection and the archive pathname.
 		do
 			add_flag ("tree", "Show entries as a tree")
 			add_optional_string_option ("password", "Archive password", "")
@@ -28,52 +28,44 @@ feature -- Interface definition
 
 feature -- Execution
 
-	handle (a_input: CLI_COMMAND_INPUT)
-			-- List stored pathnames without extraction; publish a tree only after complete success.
+	handle (input: CLI_COMMAND_INPUT)
+			-- List entries without extracting bodies; publish a tree only after successful closing.
 		local
-			stream: detachable ARCHIVE_READ_STREAM
-			options: ARCHIVE_READ_OPTIONS
-			archive_name, password, diagnostic: STRING_32
-			failure: ARCHIVE_ERROR
+			reader: ARC_ARCHIVE
 			tree: detachable ARC_LIST_TREE
-			display: ARC_ENTRY_DISPLAY
+			path: PATH
+			archive_name: STRING_32
 		do
-			archive_name := a_input.string_parameter ("archive")
+			archive_name := input.string_parameter ("archive")
 			if archive_name.is_empty then
 				fail ("Archive path must not be empty", Invalid_call)
 			end
-
-			create display
-			create options.make
-			password := a_input.string_parameter ("password")
-			if not password.is_empty then
-				options.set_password (password)
-			end
-			if a_input.boolean_parameter ("tree") then
+			create path.make_from_string (archive_name)
+			if input.boolean_parameter ("tree") then
 				create tree.make (".")
 			end
-			create stream.make_with_options (create {PATH}.make_from_string (archive_name), options)
-
-			stream.open
-			across stream as entry loop
-				if attached tree as nodes then
-					nodes.add (entry)
-				else
-					display.put_line (display.escaped (entry.pathname))
-				end
+			if input.string_parameter ("password").is_empty then
+				create reader.make_open_read (path)
+			else
+				create reader.make_open_read_with_password (path, input.string_parameter ("password"))
 			end
-			stream.close
-
-			if stream.has_failed then
-				failure := stream.last_error
-				diagnostic := display.failure_message ("list", stream.path, failure)
-				fail (diagnostic, 1)
+			from until reader.after loop
+				if attached tree as nodes then
+					nodes.add (reader.entry_name, {ARC_ENTRY_DISPLAY}.kind_name (reader), reader.entry_is_directory)
+				else
+					{ARC_ENTRY_DISPLAY}.put_line ({ARC_ENTRY_DISPLAY}.escaped (reader.entry_name))
+				end
+				reader.forth
+			end
+			reader.close
+			if reader.has_failed then
+				fail ({ARC_ENTRY_DISPLAY}.failure_message ("list", path, reader.last_error), 1)
 			elseif attached tree as nodes then
 				nodes.print_tree ("")
 			end
 		rescue
-			if attached stream as active_stream then
-				active_stream.close
+			if attached reader as active_reader then
+				active_reader.close
 			end
 		end
 

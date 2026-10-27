@@ -45,7 +45,7 @@ feature -- Execution
 				io.put_string ("%NRoot options:%N  -h, --help  Show application help%N  --version   Show application and libarchive versions%N")
 			else
 				io.put_string ("arc dev%Nlibarchive version number: ")
-				io.put_integer ({ARCHIVE}.libarchive_version)
+				io.put_integer (libarchive_version)
 				io.put_new_line
 			end
 		end
@@ -53,5 +53,14 @@ feature -- Execution
 feature {NONE} -- Implementation
 
 	application: CLI_APPLICATION
+			-- CLI application whose help is displayed by this command.
+
+	libarchive_version: INTEGER
+			-- Linked libarchive version number.
+		external
+			"C use <archive.h>"
+		alias
+			"archive_version_number"
+		end
 
 end

@@ -25,17 +25,12 @@ mise.local.toml
 Thumbs.db
 Desktop.ini
 
-# Extraction integration probe.
-/unpack_probe
-/unpack_probe.exe
+# Current Gobo library probes.
+/arc_demo
+/arc_demo.exe
+/arc_checks
+/arc_checks.exe
+/arc_package_checks
+/arc_package_checks.exe
 
-/unpack_options_probe
-/unpack_options_probe.exe
-
-# Packing integration probe.
-/pack_probe
-/pack_probe.exe
-
-# Sequential reading integration probe.
-/read_probe
-/read_probe.exe
+/arc_archive_checks

@@ -1,0 +1,3 @@
+[submodule "vendor/cli"]
+	path = vendor/cli
+	url = https://github.com/samedit66/cli.git

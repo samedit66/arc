@@ -15,7 +15,7 @@ feature {NONE} -- Initialization
 		local
 			application: CLI_APPLICATION
 		do
-			create application.make ("arc", "Create, extract, list, inspect and verify archives.")
+			create application.make ("arc", "Create, extract and list archives.")
 			application.add_command (create {ARC_ROOT_COMMAND}.make (application))
 			application.add_command (create {ARC_PACK_COMMAND})
 			application.add_command (create {ARC_UNPACK_COMMAND})

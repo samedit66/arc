@@ -105,17 +105,20 @@ class PackageTests(unittest.TestCase):
         manifest = {"settings": settings, "package_name": package_name(settings)}
         (native / "manifest.json").write_text(json.dumps(manifest))
         (root / "src/core/c").mkdir(parents=True)
-        (root / "src/core/archive.e").write_bytes(b"unchanged source fixture")
-        (root / "src/core/c/arc_unpack.h").write_bytes(b"native primitive fixture")
+        (root / "src/core/arc_reader.e").write_bytes(b"unchanged source fixture")
+        (root / "src/core/c/libarchive_wrapper.h").write_bytes(b"native primitive fixture")
         (root / "src/cli").mkdir()
         (root / "src/cli/arc_cli.e").write_bytes(b"CLI source fixture")
+        (root / "src/cli/presentation").mkdir()
+        (root / "src/cli/presentation/arc_entry_display.e").write_bytes(b"Presentation fixture")
         (root / "vendor/cli/src").mkdir(parents=True)
+        (root / "vendor/cli/.git").write_text("gitdir: ../../.git/modules/vendor/cli\n")
         (root / "vendor/cli/cli.ecf").write_text("<fixture/>\n")
         (root / "vendor/cli/src/application_parser.e").write_text("CLI parser fixture\n")
         (root / "arc.ecf").write_text("<fixture/>\n")
         (root / "README.md").write_text("Fixture documentation\n")
         (root / "docs").mkdir()
-        (root / "docs/design.md").write_text("Implementation notes fixture\n")
+        (root / "docs/code.md").write_text("Source map fixture\n")
         (root / "conan.lock").write_text("{}\n")
         cache = root / "build/conan"
         cache.mkdir()
@@ -129,21 +132,32 @@ class PackageTests(unittest.TestCase):
                 self.fixture(root, settings)
                 archive = create_package(root)
                 with zipfile.ZipFile(archive) as package:
-                    self.assertEqual(package.read("arc/src/core/archive.e"), b"unchanged source fixture")
-                    self.assertEqual(package.read("arc/docs/design.md"), b"Implementation notes fixture\n")
+                    self.assertEqual(package.read("arc/src/core/arc_reader.e"), b"unchanged source fixture")
+                    self.assertEqual(package.read("arc/docs/code.md"), b"Source map fixture\n")
                     self.assertEqual(package.read("arc/src/cli/arc_cli.e"), b"CLI source fixture")
-                    self.assertEqual(package.read("arc/src/core/c/arc_unpack.h"), b"native primitive fixture")
+                    self.assertEqual(package.read("arc/src/cli/presentation/arc_entry_display.e"), b"Presentation fixture")
+                    self.assertEqual(package.read("arc/src/core/c/libarchive_wrapper.h"), b"native primitive fixture")
+                    self.assertNotIn("arc/vendor/cli/.git", package.namelist())
                     self.assertIn("arc/vendor/cli/cli.ecf", package.namelist())
                     self.assertIn("arc/vendor/cli/src/application_parser.e", package.namelist())
                     self.assertIn("arc/build/native/manifest.json", package.namelist())
                     self.assertTrue(any(name.endswith("licenses/LICENSE") for name in package.namelist()))
                     self.assertFalse(any("must-not-ship" in name for name in package.namelist()))
                     package.extractall(root / "consumer/vendor")
-                self.assertEqual((root / "consumer/vendor/arc/docs/design.md").read_text(), "Implementation notes fixture\n")
+                self.assertEqual((root / "consumer/vendor/arc/docs/code.md").read_text(), "Source map fixture\n")
                 copied = root / "consumer/vendor/arc/build/native"
                 tree = ET.parse(copied / "native.ecf")
                 location = tree.find("e:target/e:external_library", NAMESPACE).get("location")
                 self.assertTrue((copied / location.removeprefix("$ECF_CONFIG_PATH/")).is_file())
+
+    def test_uninitialized_cli_submodule_is_rejected_before_packaging(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.fixture(root, SETTINGS[0])
+            (root / "vendor/cli/cli.ecf").unlink()
+            with self.assertRaisesRegex(SystemExit, "git submodule update --init --recursive"):
+                create_package(root)
+            self.assertFalse((root / "build/package").exists())
 
     def test_mismatched_manifest_is_rejected_before_packaging(self):
         with tempfile.TemporaryDirectory() as temporary:

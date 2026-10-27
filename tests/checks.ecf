@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<system xmlns="http://www.eiffel.com/developers/xml/configuration-1-23-0" name="arc_checks" uuid="E1E3B110-51BA-4F0C-AB34-000000000002">
+    <target name="checks">
+        <root class="ARC_CHECKS" feature="make"/>
+        <option><assertions precondition="true" postcondition="true" check="true" invariant="true" loop="true" supplier_precondition="true"/></option>
+        <setting name="console_application" value="true"/>
+        <setting name="executable_name" value="arc_checks"/>
+        <capability><void_safety support="all" use="all"/></capability>
+        <library name="free_elks" location="$GOBO/library/free_elks/library_ge.ecf">
+            <condition><custom name="GOBO_EIFFEL" value="ge"/></condition>
+        </library>
+        <library name="base" location="$ISE_LIBRARY/library/base/base.ecf">
+            <condition><custom name="GOBO_EIFFEL" excluded_value="ge"/></condition>
+        </library>
+        <library name="arc" location="../arc.ecf"/>
+        <cluster name="probe" location="." recursive="false"/>
+    </target>
+</system>
