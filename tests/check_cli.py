@@ -73,7 +73,7 @@ def check_pack_and_unpack(executable):
         for profile in PROFILES:
             archive = root / ("roundtrip." + profile)
             created = run(executable, root, "pack", "--progress", archive, source)
-            assert created.stdout == f"Created {archive}\n"
+            assert created.stdout == "Created " + str(archive).replace("\\", "\\\\") + "\n", created
             assert "Progress:" in created.stderr
             assert "100%" in created.stderr and "█" in created.stderr
             assert "\x1b[2K" in created.stderr and "\x1b" not in created.stdout
@@ -93,7 +93,9 @@ def check_pack_and_unpack(executable):
             alias = str(archive).replace("/private/var/", "/var/", 1)
             extracted = run(executable, root, "unpack", "--progress", alias)
             destination = root / "roundtrip"
-            assert extracted.stdout == f"Extracted to {destination}\n"
+            assert extracted.stdout.startswith("Extracted to ") and extracted.stdout.count("\n") == 1, extracted
+            reported = extracted.stdout.removeprefix("Extracted to ").removesuffix("\n").replace("\\\\", "\\")
+            assert Path(reported).is_absolute() and Path(reported).samefile(destination), extracted.stdout
             assert "Progress:" in extracted.stderr
             assert "100%" in extracted.stderr and "█" in extracted.stderr
             assert "\x1b[2K" in extracted.stderr and "\x1b" not in extracted.stdout
