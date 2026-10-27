@@ -44,9 +44,12 @@ deployment if the swap fails. Separate host/build profiles are accepted with
 Linux libc is detected natively; `--libc` asserts the expected environment rather
 than changing a glibc compiler into a musl cross-toolchain.
 
-On Windows, a generated CMake hook lets libarchive find Conan’s `zstd_static.lib`;
-the hook configuration contributes to the package ID, preventing reuse of a
-libarchive binary built without the required Zstd support. The result includes
+A generated CMake hook fixes two libarchive 3.8.7 issues: Windows discovery
+of Conan’s `zstd_static.lib`, and ZIP’s missing UTF-8 flag for ASCII-named links
+with Unicode targets. The hook configuration contributes to the package ID, so
+unpatched cached binaries are not reused. System libarchive is not modified;
+Unicode ZIP symlink interoperability requires an equivalent libarchive patch there.
+The result includes
 `native.ecf`, `manifest.json`, licenses and `full_deploy/host`.
 
 Do not hand-edit generated native ECF, build outputs, EIFGENs or `.gobo`.
@@ -190,8 +193,8 @@ Use Windows 10 1803 or later with a matching MSVC/UCRT environment and the exist
 Run prepare from a Visual Studio Developer terminal, configure Gobo for MSVC, and
 set `GOBO_CC=msc`, and build the CLI and all four probe ECFs. Use the resulting `.exe` paths explicitly in
 the Python checks above. Source tests use UTF-8 capture. Symlink tests require
-Developer Mode or elevation; junction tests run only on Windows. Install a `bsdtar`
-compatible independent reader for AES ZIP checks. Tests do not silently skip links.
+Developer Mode or elevation; junction tests run only on Windows. AES ZIP checks use 7-Zip on Windows (already required by the Gobo installer)
+and `bsdtar` on Unix, preserving Unicode passphrases at the command-line boundary. Tests do not silently skip links.
 
 The header uses wide native paths, binary exclusive output, checked directory
 iteration, physical reparse-point classification and scoped thread-local UTF-8
@@ -222,7 +225,7 @@ python3 tests/check_archive.py --build --compiler ise
 ```
 
 macOS uses EiffelStudio’s headless `ecb` compiler, avoiding GTK/X11 dependencies.
-EiffelStudio uses generated ECF copies in `build/ci`, leaving source configurations
+EiffelStudio uses fresh projects and generated ECF copies in `build/ci`, leaving source configurations
 unchanged, and finalizes with `-keep` to preserve probe assertions. CI uses Linux
 glibc to test portability; it does not certify fully static musl releases.
 

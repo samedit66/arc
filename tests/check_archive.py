@@ -54,7 +54,7 @@ def build_and_check(root, compiler="ge"):
                 tree.write(generated / source.name, encoding="utf-8", xml_declaration=True)
             project = generated / name
             executable = "ecb" if sys.platform == "darwin" else "ec"
-            subprocess.run([executable, "-batch", "-config", str(generated / config.name),
+            subprocess.run([executable, "-batch", "-clean", "-config", str(generated / config.name),
                             "-target", target, "-project_path", str(project),
                             "-finalize", "-keep", "-c_compile"], cwd=root, env=env, check=True)
             shutil.copy2(project / "EIFGENs" / target / "F_code" / (name + suffix), root / (name + suffix))

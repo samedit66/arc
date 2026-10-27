@@ -81,6 +81,11 @@ def check_pack_and_unpack(executable):
                 with tarfile.open(archive) as packed:
                     target = packed.getmember("dangling").linkname
                     assert target == "absent-🙂.txt", ("packed link", profile, target)
+            if profile == "zip":
+                with zipfile.ZipFile(archive) as packed:
+                    link = packed.getinfo("dangling")
+                    assert packed.read(link) == "absent-🙂.txt".encode("utf-8")
+                    assert link.flag_bits & 0x800, ("UTF-8 link flag", link.flag_bits)
             listing = run(executable, root, "list", archive).stdout
             assert "nested/large.txt\n" in listing and source.name not in listing
             run(executable, root, "verify", archive)
@@ -199,11 +204,15 @@ def check_inspection_and_passwords(executable):
         assert set(root.iterdir()) == before
         run(executable, root, "unpack", "--password", password, protected)
         assert (root / "protected/payload.txt").read_bytes() == source.read_bytes()
-        # bsdtar is an independent libarchive consumer and supports WinZip AES.
-        bsdtar = shutil.which("bsdtar") or shutil.which("tar")
-        assert bsdtar, "an independent libarchive tar reader is required"
-        decoded = subprocess.run([bsdtar, "--passphrase", password, "-xOf", str(protected)],
-                                 capture_output=True, timeout=30)
+        if os.name == "nt":
+            reader = shutil.which("7z")
+            assert reader, "7-Zip is required for independent Unicode AES ZIP checks on Windows"
+            command = [reader, "x", "-so", "-bso0", "-bsp0", "-p" + password, str(protected)]
+        else:
+            reader = shutil.which("bsdtar") or shutil.which("tar")
+            assert reader, "an independent libarchive tar reader is required"
+            command = [reader, "--passphrase", password, "-xOf", str(protected)]
+        decoded = subprocess.run(command, capture_output=True, timeout=30)
         assert decoded.returncode == 0 and decoded.stdout == source.read_bytes(), decoded.stderr
         for profile in PROFILES:
             if profile != "zip":

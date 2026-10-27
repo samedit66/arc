@@ -72,6 +72,8 @@ Use libarchive **3.8.7 or later**, including its development headers and librari
 
 Arc uses system libarchive by default. No preparation script is needed.
 
+Prepared Conan packages include a fix for Unicode ZIP symlink targets; system libarchive needs the same fix for reliable interchange with Windows.
+
 On **macOS**, a Homebrew installation can be selected with:
 
 ```sh

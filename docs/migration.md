@@ -159,3 +159,7 @@ CP437 default. No caller API changes are required.
 Windows output creation explicitly rejects existing reparse points before calling
 the CRT, including dangling symlinks that `_wopen` can otherwise follow despite
 exclusive creation. Rejected output paths never become owned cleanup targets.
+
+Prepared Conan libarchive builds also mark explicitly selected UTF-8 in ZIP headers
+for ASCII entry names, preserving Unicode symlink targets when read on Windows.
+System libarchive remains untouched and may require an equivalent libarchive patch.
