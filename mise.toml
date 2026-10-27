@@ -1,107 +1,39 @@
-# Use the platform toolchain; explicit CC/CXX always take precedence.
-[env]
-CC = "{% if env.CC is defined and env.CC != '' %}{{ env.CC }}{% elif os() == 'macos' %}clang{% else %}gcc{% endif %}"
-CXX = "{% if env.CXX is defined and env.CXX != '' %}{{ env.CXX }}{% elif os() == 'macos' %}clang++{% else %}g++{% endif %}"
-
-[settings]
-pipx.uvx = true
-
 [tools]
-cmake = "4.4.4"
-ninja = "1.13.2"
-"pipx:clang-format" = "22.1.8"
 python = "3.13.15"
-uv = "0.12.24"
+"pipx:conan" = "2.33.0"
 
-[tasks.configure]
-description = "Configure CMake dev (or ARC_CMAKE_PRESET) when needed"
-shell = "bash -euo pipefail -c"
-run = "bash scripts/configure.sh"
-dir = "{{config_root}}"
+[env]
+CONAN_HOME = "{{ config_root }}/build/conan"
+
+[tasks.prepare]
+description = "Detect the native toolchain, deploy static dependencies and generate ECF"
+run = "python scripts/prepare.py"
 
 [tasks.build]
-description = "Incrementally build the CMake dev configuration"
-depends = ["configure"]
-shell = "bash -euo pipefail -c"
-run = "bash scripts/build.sh"
-dir = "{{config_root}}"
+description = "Build and verify a maximally static release CLI from prepared dependencies"
+run = "python scripts/prepare.py --build --skip-prepare"
+
+[tasks.package]
+description = "Package Eiffel source, native dependencies, licenses and target metadata"
+run = "python scripts/package.py --skip-prepare"
 
 [tasks.test]
-description = "Build arc, then run isolated black-box CLI tests"
+description = "Build and run metadata, assertion-enabled probes and CLI checks"
+depends = ["test-metadata", "test-native"]
+
+[tasks.test-metadata]
+description = "Check dependency, packaging and executable import contracts"
+run = "python -m unittest discover -s tests -p 'test_*.py'"
+
+[tasks.test-native]
+description = "Rebuild and run all probes and CLI integration"
 depends = ["build"]
-shell = "bash -euo pipefail -c"
-run = "bash scripts/test.sh"
-dir = "{{config_root}}"
+run = "python tests/check_archive.py --build"
 
-[tasks.verify]
-description = "Alias for the black-box test suite"
-depends = ["test"]
+[tasks.test-cli]
+description = "Check explicitly supplied CLI executables and unpack behavior"
+run = "python tests/check_cli.py"
 
-[tasks.test-release]
-description = "Test the already-built static release binary and public API"
-shell = "bash -euo pipefail -c"
-run = "bash scripts/test-release.sh"
-dir = "{{config_root}}"
-
-[tasks.check]
-description = "Build and test arc, then check C formatting"
-depends = ["test", "consumers"]
-shell = "bash -euo pipefail -c"
-run = "bash scripts/format.sh --check"
-dir = "{{config_root}}"
-
-[tasks.format]
-description = "Format C sources"
-shell = "bash -euo pipefail -c"
-run = "bash scripts/format.sh"
-dir = "{{config_root}}"
-
-[tasks."format-check"]
-description = "Check C formatting"
-shell = "bash -euo pipefail -c"
-run = "bash scripts/format.sh --check"
-dir = "{{config_root}}"
-
-[tasks.run]
-description = "Build and run arc with forwarded arguments"
-depends = ["build"]
-shell = "bash -euo pipefail -c"
-run = "bash scripts/run.sh"
-dir = "{{config_root}}"
-
-[tasks.consumers]
-description = "Check source, installed CMake and pkg-config consumers"
-shell = "bash -euo pipefail -c"
-run = "bash scripts/check-consumers.sh"
-dir = "{{config_root}}"
-
-[tasks.bench]
-description = "Build Release and benchmark arc against tar and zip on generated fixtures"
-shell = "bash -euo pipefail -c"
-run = "bash scripts/bench.sh"
-dir = "{{config_root}}"
-
-[tasks.bench-ouch]
-description = "Benchmark Arc on ouch's Rust workloads with Hyperfine"
-shell = "bash -euo pipefail -c"
-run = "bash scripts/bench-ouch.sh"
-dir = "{{config_root}}"
-
-[tasks.release]
-description = "Build Release with pinned vcpkg dependencies for the host"
-shell = "bash -euo pipefail -c"
-run = "bash scripts/build-release.sh"
-dir = "{{config_root}}"
-
-[tasks.dist]
-description = "Test and package the host release"
-depends = ["release"]
-shell = "bash -euo pipefail -c"
-run = "bash scripts/test-release.sh && bash scripts/package-release.sh"
-dir = "{{config_root}}"
-
-[tasks.clean]
-description = "Remove project builds, local release dependencies and test caches"
-shell = "bash -euo pipefail -c"
-run = "bash scripts/clean.sh"
-dir = "{{config_root}}"
+[tasks.test-system]
+description = "Compile a source-only core consumer with system libarchive, without Conan"
+run = "python tests/check_archive.py --system"

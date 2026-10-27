@@ -1,8 +1,0 @@
-string(RANDOM LENGTH 16 ALPHABET 0123456789abcdef suffix)
-set(work "${CMAKE_CURRENT_BINARY_DIR}/api-${suffix}")
-file(MAKE_DIRECTORY "${work}")
-execute_process(COMMAND "${ARC_API_EXECUTABLE}" WORKING_DIRECTORY "${work}" RESULT_VARIABLE result)
-file(REMOVE_RECURSE "${work}")
-if(NOT result STREQUAL "0")
-    message(FATAL_ERROR "C test failed: ${result}")
-endif()

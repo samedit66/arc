@@ -1,5 +1,0 @@
-@PACKAGE_INIT@
-include(CMakeFindDependencyMacro)
-find_dependency(LibArchive)
-include("${CMAKE_CURRENT_LIST_DIR}/arcTargets.cmake")
-check_required_components(arc)

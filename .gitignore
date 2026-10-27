@@ -1,9 +1,37 @@
-tests/.venv/
-__pycache__/
-.pytest_cache/
-*.o
-*.a
+# EiffelStudio and Gobo generated build directories, at any project depth.
+EIFGENs/
+.gobo/
+
+# Native dependencies, Conan cache, package staging and release ZIPs.
+/build/
+
+# Executables produced by the current application and linkage test targets.
 /arc
 /arc.exe
+/linkage_check
+/linkage_check.exe
 
-/build/
+# Python bytecode and local virtual environments.
+__pycache__/
+*.py[cod]
+.venv/
+
+# Personal mise overrides; keep mise.toml and Conan profiles under version control.
+mise.local.toml
+.mise.local.toml
+
+# Operating-system metadata.
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Current Gobo library probes.
+/arc_demo
+/arc_demo.exe
+/arc_checks
+/arc_checks.exe
+/arc_package_checks
+/arc_package_checks.exe
+
+/arc_archive_checks
+/arc_archive_checks.exe
