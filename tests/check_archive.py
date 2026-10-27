@@ -11,14 +11,50 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+import xml.etree.ElementTree as ET
 
 
-def build_and_check(root):
-    """Rebuild all Gobo probes, run isolated profile fixtures and exercise the rebuilt CLI."""
-    env = dict(os.environ, GOBO_EIFFEL="ge")
-    for target in ("demo", "checks", "package_checks", "archive_checks"):
-        subprocess.run(["gec", "--gelint", "--variable=ARC_NATIVE_MODE=conan",
-                        str(root / "tests" / (target + ".ecf"))], cwd=root, env=env, check=True)
+def build_and_check(root, compiler="ge"):
+    """Build the CLI and assertion-enabled probes with the selected compiler, then run shared checks."""
+    env = dict(os.environ, GOBO_EIFFEL=compiler)
+    suffix = ".exe" if os.name == "nt" else ""
+    targets = [("cli", root / "arc.ecf", "arc")]
+    targets += [(target, root / "tests" / (target + ".ecf"), "arc_" + target)
+                for target in ("demo", "checks", "package_checks", "archive_checks")]
+    for target, config, name in targets:
+        if compiler == "ge":
+            command = ["gec", "--gelint", "--gc=boehm", "--variable=ARC_NATIVE_MODE=conan",
+                       "--target=" + target, str(config)]
+            subprocess.run(command, cwd=root, env=env, check=True)
+        else:
+            # EiffelStudio has no Gobo-style --variable switch. Generate a configuration
+            # with explicit root variables and absolute source/dependency locations.
+            namespace = "{http://www.eiffel.com/developers/xml/configuration-1-23-0}"
+            generated = root / "build/ci"
+            generated.mkdir(parents=True, exist_ok=True)
+            for source in (root / "arc.ecf", config):
+                tree = ET.parse(source)
+                for element in tree.iter():
+                    location = element.get("location")
+                    if location:
+                        if location.startswith("$ECF_CONFIG_PATH"):
+                            element.set("location", location.replace("$ECF_CONFIG_PATH", str(source.parent)))
+                        elif not location.startswith(("$", "-")):
+                            resolved = (source.parent / location).resolve()
+                            if resolved == root / "arc.ecf":
+                                resolved = generated / "arc.ecf"
+                            element.set("location", str(resolved))
+                for item in tree.getroot().findall(namespace + "target"):
+                    variable = item.find(namespace + "variable[@name='ARC_NATIVE_MODE']")
+                    if variable is None:
+                        variable = ET.SubElement(item, namespace + "variable", name="ARC_NATIVE_MODE")
+                    variable.set("value", "conan")
+                tree.write(generated / source.name, encoding="utf-8", xml_declaration=True)
+            project = generated / name
+            subprocess.run(["ec", "-batch", "-config", str(generated / config.name),
+                            "-target", target, "-project_path", str(project),
+                            "-finalize", "-keep", "-c_compile"], cwd=root, env=env, check=True)
+            shutil.copy2(project / "EIFGENs" / target / "F_code" / (name + suffix), root / (name + suffix))
     suffix = ".exe" if os.name == "nt" else ""
 
     def run(name, arguments, directory):
@@ -157,6 +193,7 @@ def main(arguments):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--compiler", choices=("ge", "ise"), default="ge", help="Compiler for --build")
     parser.add_argument("--build", action="store_true", help="Rebuild and run all probes and CLI integration")
     parser.add_argument("--relocate", type=Path, help="Check a project-built library or application ZIP after relocation")
     parser.add_argument("--system", action="store_true", help="Check a source-only library against installed libarchive")
@@ -167,6 +204,6 @@ if __name__ == "__main__":
     elif options.relocate:
         check_relocation(options.relocate.resolve())
     elif options.build:
-        build_and_check(Path(__file__).resolve().parents[1])
+        build_and_check(Path(__file__).resolve().parents[1], options.compiler)
     else:
         main(options.executables)
