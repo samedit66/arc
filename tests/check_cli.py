@@ -205,15 +205,16 @@ def check_inspection_and_passwords(executable):
         run(executable, root, "unpack", "--password", password, protected)
         assert (root / "protected/payload.txt").read_bytes() == source.read_bytes()
         if os.name == "nt":
-            reader = shutil.which("7z")
-            assert reader, "7-Zip is required for independent Unicode AES ZIP checks on Windows"
-            command = [reader, "x", "-so", "-bso0", "-bsp0", "-p" + password, str(protected)]
+            # 7-Zip on Windows converts ZIP passwords to ANSI, not UTF-8.
+            import pyzipper
+            with pyzipper.AESZipFile(protected) as archive:
+                assert archive.read("payload.txt", pwd=password.encode("utf-8")) == source.read_bytes()
         else:
             reader = shutil.which("bsdtar") or shutil.which("tar")
             assert reader, "an independent libarchive tar reader is required"
             command = [reader, "--passphrase", password, "-xOf", str(protected)]
-        decoded = subprocess.run(command, capture_output=True, timeout=30)
-        assert decoded.returncode == 0 and decoded.stdout == source.read_bytes(), decoded.stderr
+            decoded = subprocess.run(command, capture_output=True, timeout=30)
+            assert decoded.returncode == 0 and decoded.stdout == source.read_bytes(), decoded.stderr
         for profile in PROFILES:
             if profile != "zip":
                 output = root / ("rejected." + profile)

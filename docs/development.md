@@ -195,8 +195,10 @@ Use Windows 10 1803 or later with a matching MSVC/UCRT environment and the exist
 Run prepare from a Visual Studio Developer terminal, configure Gobo for MSVC, and
 set `GOBO_CC=msc`, and build the CLI and all four probe ECFs. Use the resulting `.exe` paths explicitly in
 the Python checks above. Source tests use UTF-8 capture. Symlink tests require
-Developer Mode or elevation; junction tests run only on Windows. AES ZIP checks use 7-Zip on Windows (already required by the Gobo installer)
-and `bsdtar` on Unix, preserving Unicode passphrases at the command-line boundary. Tests do not silently skip links.
+Developer Mode or elevation; junction tests run only on Windows. Independent AES ZIP
+checks use `pyzipper==0.3.6` on Windows (install with pip) and `bsdtar` on Unix.
+The Windows test passes UTF-8 password bytes directly; 7-Zip uses ANSI ZIP passwords.
+Tests do not silently skip links.
 
 The header uses wide native paths, binary exclusive output, checked directory
 iteration, physical reparse-point classification and scoped thread-local UTF-8
