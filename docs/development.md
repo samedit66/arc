@@ -107,8 +107,10 @@ It also checks full/partial/empty remaining passes, stable inspection snapshots,
 password-based verification and damaged payloads. `check_archive.py` creates the
 corrupted ZIP and TAR fixtures required by the assertion-enabled probe.
 
-For a future POSIX EiffelStudio verification, configure the normal ISE variables,
-set GOBO_EIFFEL=ise and rebuild from source. Windows verification must use a real Windows host and matching MSVC toolchain. Do not use stale executables from the former implementation.
+For EiffelStudio, configure its normal environment and run
+`python3 tests/check_archive.py --build --compiler ise`. The helper creates fresh
+finalized projects with assertions retained; macOS uses the headless `ecb` compiler.
+Windows verification uses a real Windows host and matching MSVC toolchain.
 
 ## Automated checks and distribution
 
@@ -117,7 +119,7 @@ mise run prepare
 mise run test
 # Metadata/import-policy tests only; no native toolchain needed:
 mise run test-metadata
-# Rebuild assertion-enabled probes and test the existing CLI:
+# Rebuild the CLI and assertion-enabled probes, then run their shared checks:
 python3 tests/check_archive.py --build
 # System library consumer, without CLI or a Conan deployment:
 ARC_LIBARCHIVE_PREFIX="$(brew --prefix libarchive)" mise run test-system
@@ -130,7 +132,7 @@ CRT and Release dependencies. The finalized executable is inspected with
 Linux also rejects an ELF interpreter, and Windows rejects dynamic CRT imports.
 The Windows native ECF propagates the profile's `/MT` (or `/MTd` for a debug library).
 
-The native suite rebuilds all four probes, runs profile fixtures in fresh
+The native suite rebuilds the CLI and all four probes, runs profile fixtures in fresh
 directories, and runs `check_cli.py` with the explicit executable. Metadata tests
 cover imports, ABI/libc names, library-only packaging and failed preparation.
 Windows jobs also run the platform-specific native cases.
