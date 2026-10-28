@@ -169,6 +169,63 @@ static int libarchive_wrapper_open_reader(struct archive *reader, const void *pa
     return status;
 }
 
+/* Windows libarchive caches paths before restoring links; inspect every parent afresh. */
+static int libarchive_wrapper_write_extraction_header(struct archive *disk, struct archive_entry *entry)
+{
+    int status;
+    LIBARCHIVE_WRAPPER_ENTER(disk, return ARCHIVE_FATAL);
+#ifdef _WIN32
+    const wchar_t *name = archive_entry_pathname_w(entry);
+    DWORD capacity = GetFullPathNameW(name, 0, NULL, NULL);
+    DWORD failure = capacity ? ERROR_SUCCESS : GetLastError();
+    wchar_t *path = NULL;
+    if (capacity) {
+        path = (wchar_t *)malloc((size_t)capacity * sizeof(wchar_t));
+        if (!path) abort();
+        DWORD copied = GetFullPathNameW(name, capacity, path, NULL);
+        if (!copied) failure = GetLastError();
+        else if (copied >= capacity) failure = ERROR_INSUFFICIENT_BUFFER;
+    }
+    if (!failure) {
+        wchar_t *parent = path;
+        if (wcsncmp(parent, L"\\\\?\\", 4) == 0) parent += 4;
+        if (wcsncmp(parent, L"UNC\\", 4) == 0 || wcsncmp(parent, L"\\\\", 2) == 0) {
+            parent += parent[0] == L'U' ? 4 : 2;
+            for (int part = 0; part < 2; ++part) {
+                while (*parent && *parent != L'\\') ++parent;
+                if (*parent) ++parent;
+            }
+        } else if (parent[0] && parent[1] == L':' && parent[2] == L'\\') parent += 3;
+
+        for (; *parent; ++parent) {
+            if (*parent != L'\\') continue;
+            *parent = 0;
+            DWORD attributes = GetFileAttributesW(path);
+            DWORD code = attributes == INVALID_FILE_ATTRIBUTES ? GetLastError() : ERROR_SUCCESS;
+            *parent = L'\\';
+            if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+                failure = ERROR_CANT_ACCESS_FILE;
+                break;
+            }
+            if (code && code != ERROR_FILE_NOT_FOUND && code != ERROR_PATH_NOT_FOUND) {
+                failure = code;
+                break;
+            }
+        }
+    }
+    free(path);
+    if (failure) {
+        int code = libarchive_wrapper_windows_code(failure);
+        archive_set_error(disk, code, "Cannot access extraction parents: %s", libarchive_wrapper_system_message(code));
+        LIBARCHIVE_WRAPPER_LEAVE();
+        return ARCHIVE_FAILED;
+    }
+#endif
+    status = archive_write_header(disk, entry);
+    LIBARCHIVE_WRAPPER_LEAVE();
+    return status;
+}
+
 /* Compare a source with the owned output without reopening the output or denying its writes. */
 #ifdef _WIN32
 static int libarchive_wrapper_is_output_source(int descriptor, const void *path,
@@ -427,7 +484,7 @@ static int libarchive_wrapper_extract_block(struct archive *reader,
 }
 /**
  * Create an owned binary descriptor exclusively, without truncating any existing
- * file or symlink. Return the descriptor or -1 and capture errno separately.
+ * file or symlink. Return the descriptor or -1 and capture the system error separately.
  * Ownership, finalization and removal policy belong to Eiffel.
  */
 static int libarchive_wrapper_create_output(const void *path, int32_t *error_code)
@@ -435,6 +492,20 @@ static int libarchive_wrapper_create_output(const void *path, int32_t *error_cod
     int fd;
     *error_code = 0;
 #ifdef _WIN32
+    /* The CRT can follow a dangling symlink despite _O_EXCL. Reject the link itself. */
+    DWORD attributes = GetFileAttributesW((const wchar_t *)path);
+    if (attributes != INVALID_FILE_ATTRIBUTES) {
+        if (attributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+            *error_code = EEXIST;
+            return -1;
+        }
+    } else {
+        DWORD code = GetLastError();
+        if (code != ERROR_FILE_NOT_FOUND && code != ERROR_PATH_NOT_FOUND) {
+            *error_code = libarchive_wrapper_windows_code(code);
+            return -1;
+        }
+    }
     fd = _wopen((const wchar_t *)path, _O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY | _O_NOINHERIT,
         _S_IREAD | _S_IWRITE);
 #else

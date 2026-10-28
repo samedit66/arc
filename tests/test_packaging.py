@@ -67,7 +67,7 @@ class NativeMetadataTests(unittest.TestCase):
                     archive["defines"] = ["XML_STATIC"]
                     archive["system_libs"] = ["pthread", "m"]
                     zlib["system_libs"] = ["pthread"]
-                data = static_ecf([archive, zlib], output, compiler)
+                data = static_ecf([archive, zlib], output, compiler, settings=settings)
                 self.assertNotIn(str(output).encode(), data)
                 target = ET.fromstring(data).find("e:target", NAMESPACE)
                 libraries = [element.attrib["location"] for element in target.findall("e:external_library", NAMESPACE)]
@@ -76,7 +76,10 @@ class NativeMetadataTests(unittest.TestCase):
                 if compiler == "msvc":
                     self.assertTrue(libraries[0].endswith("archive.lib"))
                     self.assertEqual(libraries[2:], ["bcrypt.lib"])
-                    self.assertEqual(target.find("e:external_cflag", NAMESPACE).get("value"), "/DLIBARCHIVE_STATIC")
+                    self.assertEqual(target.find("e:external_cflag", NAMESPACE).get("value"), "-DLIBARCHIVE_STATIC")
+                    flags = [item.get("value") for item in target.findall("e:external_cflag", NAMESPACE)]
+                    self.assertIn("-MT", flags)
+                    self.assertTrue(all(not flag.startswith("/") for flag in flags))
                 else:
                     self.assertTrue(libraries[0].endswith("libarchive.a"))
                     self.assertEqual(libraries[2:], ["-lpthread", "-lm"])
@@ -124,7 +127,7 @@ class PackageTests(unittest.TestCase):
         (root / "arc.ecf").write_bytes((Path(__file__).resolve().parents[1] / "arc.ecf").read_bytes())
         (root / "README.md").write_text("Fixture documentation\n")
         (root / "docs").mkdir()
-        (root / "docs/code.md").write_text("Source map fixture\n")
+        (root / "docs/code.md").write_bytes(b"Source map fixture\n")
         (root / "conan.lock").write_text("{}\n")
         cache = root / "build/conan"
         cache.mkdir()

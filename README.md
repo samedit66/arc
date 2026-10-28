@@ -72,6 +72,8 @@ Use libarchive **3.8.7 or later**, including its development headers and librari
 
 Arc uses system libarchive by default. No preparation script is needed.
 
+Prepared Conan packages include a fix for Unicode ZIP symlink targets; system libarchive needs the same fix for reliable interchange with Windows.
+
 On **macOS**, a Homebrew installation can be selected with:
 
 ```sh
@@ -147,7 +149,7 @@ python3 scripts/package.py --kind application
 
 Copy `arc` or `arc.exe` onto `PATH`. No build tools or third-party shared libraries are needed to run it.
 
-Gobo on macOS ARM64 is verified. Native Windows/MSVC and Linux/musl builds still need platform testing; EiffelStudio configuration is retained but unverified.
+Gobo on macOS ARM64 is verified. The CI matrix builds and tests Gobo and EiffelStudio on Ubuntu, macOS ARM64 and Windows/MSVC. Linux/musl release builds require separate verification.
 
 ### Environment variables
 
@@ -160,6 +162,7 @@ Arc needs no runtime configuration variables. These variables affect building an
 | `ARC_LIBC` | Linux libc recorded by the Conan recipe | `glibc`, `musl`; the preparation script detects and sets it |
 | `GOBO` | Gobo installation directory used by ECF library paths | `/opt/gobo` |
 | `GOBO_EIFFEL` | Selects the Eiffel base-library configuration | `ge` for Gobo, `ise` for EiffelStudio; application scripts set `ge` |
+| `GOBO_CC` | Gobo C backend; select MSVC for Windows Conan dependencies | `msc` on Windows, `gcc` on Linux/macOS |
 | `ISE_LIBRARY` | EiffelStudio library directory | Your EiffelStudio library root |
 | `CC` | C compiler used during dependency preparation | `clang`, `gcc`, an absolute compiler path |
 | `CXX` | C++ compiler used during dependency preparation | `clang++`, `g++`, an absolute compiler path |

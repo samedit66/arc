@@ -135,6 +135,10 @@ feature {NONE} -- Application
 			writer: ARC_ARCHIVE
 		do
 			create writer.make_open_write (path, "tar")
+			if not writer.has_failed or writer.is_open then
+				io.error.put_string_32 ({STRING_32} "Existing output was accepted: " + path.name +
+					"; failed=" + writer.has_failed.out + "; open=" + writer.is_open.out + "%N")
+			end
 			check
 				rejected: writer.has_failed and not writer.is_open
 			then

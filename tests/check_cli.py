@@ -73,10 +73,19 @@ def check_pack_and_unpack(executable):
         for profile in PROFILES:
             archive = root / ("roundtrip." + profile)
             created = run(executable, root, "pack", "--progress", archive, source)
-            assert created.stdout == f"Created {archive}\n"
+            assert created.stdout == "Created " + str(archive).replace("\\", "\\\\") + "\n", created
             assert "Progress:" in created.stderr
             assert "100%" in created.stderr and "█" in created.stderr
             assert "\x1b[2K" in created.stderr and "\x1b" not in created.stdout
+            if profile == "tar":
+                with tarfile.open(archive) as packed:
+                    target = packed.getmember("dangling").linkname
+                    assert target == "absent-🙂.txt", ("packed link", profile, target)
+            if profile == "zip":
+                with zipfile.ZipFile(archive) as packed:
+                    link = packed.getinfo("dangling")
+                    assert packed.read(link) == "absent-🙂.txt".encode("utf-8")
+                    assert link.flag_bits & 0x800, ("UTF-8 link flag", link.flag_bits)
             listing = run(executable, root, "list", archive).stdout
             assert "nested/large.txt\n" in listing and source.name not in listing
             run(executable, root, "verify", archive)
@@ -93,7 +102,9 @@ def check_pack_and_unpack(executable):
             alias = str(archive).replace("/private/var/", "/var/", 1)
             extracted = run(executable, root, "unpack", "--progress", alias)
             destination = root / "roundtrip"
-            assert extracted.stdout == f"Extracted to {destination}\n"
+            assert extracted.stdout.startswith("Extracted to ") and extracted.stdout.count("\n") == 1, extracted
+            reported = extracted.stdout.removeprefix("Extracted to ").removesuffix("\n").replace("\\\\", "\\")
+            assert Path(reported).is_absolute() and Path(reported).samefile(destination), extracted.stdout
             assert "Progress:" in extracted.stderr
             assert "100%" in extracted.stderr and "█" in extracted.stderr
             assert "\x1b[2K" in extracted.stderr and "\x1b" not in extracted.stdout
@@ -102,7 +113,8 @@ def check_pack_and_unpack(executable):
             assert (destination / "nested/empty.txt").read_bytes() == b""
             assert (destination / "empty").is_dir()
             assert os.readlink(destination / "link") == "nested"
-            assert os.readlink(destination / "dangling") == "absent-🙂.txt"
+            target = os.readlink(destination / "dangling")
+            assert target == "absent-🙂.txt", ("restored link", profile, target)
             run(executable, root, "unpack", archive, ok=False)
             shutil.rmtree(destination)
         kept = root / "kept.zip"
@@ -165,6 +177,7 @@ def check_extraction_policy(executable):
         source.write_bytes(b"data")
         run(executable, root, "pack", "occupied.zip", source, ok=False)
         assert os.readlink(root / "occupied.zip") == "missing"
+        assert not (root / "missing").exists()
 
 
 def check_inspection_and_passwords(executable):
@@ -191,12 +204,17 @@ def check_inspection_and_passwords(executable):
         assert set(root.iterdir()) == before
         run(executable, root, "unpack", "--password", password, protected)
         assert (root / "protected/payload.txt").read_bytes() == source.read_bytes()
-        # bsdtar is an independent libarchive consumer and supports WinZip AES.
-        bsdtar = shutil.which("bsdtar") or shutil.which("tar")
-        assert bsdtar, "an independent libarchive tar reader is required"
-        decoded = subprocess.run([bsdtar, "--passphrase", password, "-xOf", str(protected)],
-                                 capture_output=True, timeout=30)
-        assert decoded.returncode == 0 and decoded.stdout == source.read_bytes(), decoded.stderr
+        if os.name == "nt":
+            # 7-Zip on Windows converts ZIP passwords to ANSI, not UTF-8.
+            import pyzipper
+            with pyzipper.AESZipFile(protected) as archive:
+                assert archive.read("payload.txt", pwd=password.encode("utf-8")) == source.read_bytes()
+        else:
+            reader = shutil.which("bsdtar") or shutil.which("tar")
+            assert reader, "an independent libarchive tar reader is required"
+            command = [reader, "--passphrase", password, "-xOf", str(protected)]
+            decoded = subprocess.run(command, capture_output=True, timeout=30)
+            assert decoded.returncode == 0 and decoded.stdout == source.read_bytes(), decoded.stderr
         for profile in PROFILES:
             if profile != "zip":
                 output = root / ("rejected." + profile)

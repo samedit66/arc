@@ -53,20 +53,20 @@
                 <custom name="ARC_NATIVE_MODE" value="^(system)?$" match="regexp"/>
             </condition>
         </external_cflag>
-        <external_cflag value="/DARC_SYSTEM_LIBARCHIVE">
+        <external_cflag value="-DARC_SYSTEM_LIBARCHIVE">
             <condition>
                 <platform value="windows"/>
                 <custom name="ARC_NATIVE_MODE" value="^(system)?$" match="regexp"/>
             </condition>
         </external_cflag>
-        <external_cflag value="/MD">
+        <external_cflag value="-MD">
             <condition>
                 <platform value="windows"/>
                 <custom name="ARC_NATIVE_MODE" value="^(system)?$" match="regexp"/>
                 <custom name="ARC_SYSTEM_CRT" value="md"/>
             </condition>
         </external_cflag>
-        <external_cflag value="/DLIBARCHIVE_STATIC">
+        <external_cflag value="-DLIBARCHIVE_STATIC">
             <condition>
                 <platform value="windows"/>
                 <custom name="ARC_NATIVE_MODE" value="^(system)?$" match="regexp"/>
@@ -79,7 +79,7 @@
         <library name="base" location="$ISE_LIBRARY/library/base/base.ecf">
             <condition><custom name="GOBO_EIFFEL" excluded_value="ge"/></condition>
         </library>
-        <external_cflag value="/D_WIN32_WINNT=0x0A00">
+        <external_cflag value="-D_WIN32_WINNT=0x0A00">
             <condition><platform value="windows"/></condition>
         </external_cflag>
         <external_include location="$ECF_CONFIG_PATH/src/core/c"/>

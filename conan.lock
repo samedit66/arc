@@ -12,6 +12,7 @@
         "bzip2/1.0.8#c470882369c2d95c5c77e970c0c7e321%1762886692.465"
     ],
     "build_requires": [
+        "msys2/cci.latest#d22fe7b2808f5fd34d0a7923ace9c54f%1770657326.649",
         "cmake/4.4.4#fec9c7048fae91e03c31e59977cd9c12%1791276141.315"
     ],
     "python_requires": [],

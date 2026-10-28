@@ -177,6 +177,22 @@ def prepare_dependencies(root: Path, profile: str | None = None, build_profile: 
         command = [conan, "install", ".", "-pr:h", host, "-pr:b", native_build,
                    "--build=*" if detected_libc == "musl" else "--build=missing",
                    "--deployer=full_deploy", "-of", temporary]
+        # Keep these libarchive 3.8.7 build fixes separate from the installed system library.
+        hook = build / "libarchive-compat.cmake"
+        hook.write_text("""if(WIN32)
+  find_library(ZSTD_LIBRARY NAMES zstd_static REQUIRED)
+endif()
+set(zip_source "${PROJECT_SOURCE_DIR}/libarchive/archive_write_set_format_zip.c")
+file(READ "${zip_source}" zip_code)
+string(REPLACE
+  "if (!is_all_ascii(archive_entry_pathname(zip->entry))) {"
+  "if (zip->opt_sconv != NULL || !is_all_ascii(archive_entry_pathname(zip->entry))) {"
+  zip_code "${zip_code}")
+file(WRITE "${zip_source}" "${zip_code}")
+""", encoding="utf-8")
+        variables = json.dumps({"CMAKE_PROJECT_libarchive_INCLUDE": hook.resolve().as_posix()})
+        command += ["-c:h", "libarchive/*:tools.cmake.cmaketoolchain:extra_variables=" + variables,
+                    "-c:h", 'libarchive/*:tools.info.package_id:confs=["tools.cmake.cmaketoolchain:extra_variables"]']
         if sys.platform == "win32" and profile is None:
             command += ["-s:h", "compiler.runtime=static"]
         if no_remote:
