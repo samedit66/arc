@@ -10,6 +10,7 @@ import tarfile
 import subprocess
 import sys
 import tempfile
+import json
 import zipfile
 import xml.etree.ElementTree as ET
 
@@ -17,14 +18,17 @@ import xml.etree.ElementTree as ET
 def build_and_check(root, compiler="ge"):
     """Build the CLI and assertion-enabled probes with the selected compiler, then run shared checks."""
     env = dict(os.environ, GOBO_EIFFEL=compiler)
+    settings = json.loads((root / "build/native/manifest.json").read_text())["settings"]
+    variables = {"ARC_NATIVE_MODE": "conan", "ARC_LIBC": settings.get("libc", "glibc")}
     suffix = ".exe" if os.name == "nt" else ""
     targets = [("cli", root / "arc.ecf", "arc")]
     targets += [(target, root / "tests" / (target + ".ecf"), "arc_" + target)
                 for target in ("demo", "checks", "package_checks", "archive_checks")]
     for target, config, name in targets:
         if compiler == "ge":
-            command = ["gec", "--gelint", "--gc=boehm", "--variable=ARC_NATIVE_MODE=conan",
-                       "--target=" + target, str(config)]
+            command = ["gec", "--gelint", "--gc=boehm"]
+            command += ["--variable=" + key + "=" + value for key, value in variables.items()]
+            command += ["--target=" + target, str(config)]
             if target == "cli":
                 command.insert(1, "--finalize")
             subprocess.run(command, cwd=root, env=env, check=True)
@@ -47,10 +51,11 @@ def build_and_check(root, compiler="ge"):
                                 resolved = generated / "arc.ecf"
                             element.set("location", str(resolved))
                 for item in tree.getroot().findall(namespace + "target"):
-                    variable = item.find(namespace + "variable[@name='ARC_NATIVE_MODE']")
-                    if variable is None:
-                        variable = ET.SubElement(item, namespace + "variable", name="ARC_NATIVE_MODE")
-                    variable.set("value", "conan")
+                    for key, value in variables.items():
+                        variable = item.find(namespace + "variable[@name='" + key + "']")
+                        if variable is None:
+                            variable = ET.SubElement(item, namespace + "variable", name=key)
+                        variable.set("value", value)
                 tree.write(generated / source.name, encoding="utf-8", xml_declaration=True)
             project = generated / name
             executable = "ecb" if sys.platform == "darwin" else "ec"

@@ -154,7 +154,7 @@ feature -- Extraction
 					output_entry := native.cloned_entry (entry)
 					path := destination_path.native_string
 					native.entry_set_native_name (output_entry, path.item)
-					native.write_header (disk, output_entry)
+					native.write_extraction_header (disk, output_entry)
 					check_status (disk, native.last_status)
 					native.entry_free (output_entry)
 					output_entry := default_pointer

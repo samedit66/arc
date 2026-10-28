@@ -49,6 +49,8 @@ of Conan’s `zstd_static.lib`, and ZIP’s missing UTF-8 flag for ASCII-named l
 with Unicode targets. The hook configuration contributes to the package ID, so
 unpatched cached binaries are not reused. System libarchive is not modified;
 Unicode ZIP symlink interoperability requires an equivalent libarchive patch there.
+On Windows, the native extraction adapter checks every parent for reparse points
+before restoring an entry, independently of libarchive's cached symlink checks.
 The result includes
 `native.ecf`, `manifest.json`, licenses and `full_deploy/host`.
 

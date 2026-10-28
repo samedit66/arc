@@ -319,6 +319,12 @@ feature {ARC_WRITER, ARC_READER, ARC_ERROR, ARC_ARCHIVE, ARC_PATHS} -- Native co
 			last_status := c_disk_options (handle)
 		end
 
+	write_extraction_header (handle, entry: POINTER)
+			-- Restore metadata after checking destination ancestors without following links.
+		do
+			last_status := c_write_extraction_header (handle, entry)
+		end
+
 	open_source (writer, metadata, entry, path, cleanup_code: POINTER)
 			-- Open a source and publish its owned FILE pointer; preserve primary and cleanup diagnostics.
 		do
@@ -614,6 +620,14 @@ feature {NONE} -- C ABI result functions
 			"C inline use <libarchive_wrapper.h>"
 		alias
 			"return archive_write_disk_set_options($handle, ARCHIVE_EXTRACT_SECURE_NODOTDOT | ARCHIVE_EXTRACT_SECURE_SYMLINKS | ARCHIVE_EXTRACT_NO_OVERWRITE);"
+		end
+
+	c_write_extraction_header (handle, entry: POINTER): INTEGER
+			-- C ABI result of checking destination ancestors and restoring metadata.
+		external
+			"C use <libarchive_wrapper.h>"
+		alias
+			"libarchive_wrapper_write_extraction_header"
 		end
 
 	c_source_open (writer, metadata, entry, path, cleanup_code: POINTER): POINTER
